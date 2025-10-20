@@ -28,7 +28,8 @@ def kst_time(*args):
 
 # 1. 로거 인스턴스 가져오기 (루트 로거)
 root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
+# 로거 레벨을 INFO로 설정하여 일반적인 정보 메시지는 보이게 합니다.
+root_logger.setLevel(logging.INFO) 
 
 # 2. StreamHandler 설정 (Render 로그 스트림)
 handler = logging.StreamHandler(sys.stdout)
@@ -210,9 +211,9 @@ class FearGreedAlerter:
             else:
                 logging.info(f"Duplicate alert skipped: {current_value_int} (already sent today)")
         else:
-            # 🟢 알림 조건 불충족 시 INFO 레벨 유지 및 [정상 작동] 태그 추가
-            # Render가 초록색으로 강조하지 않을 수 있지만, 'ERROR'와 구별됨
-            logging.info(f"[정상 작동] No alert. Score {current_value_int} above threshold ({self.threshold}).")
+            # ✅ 알림 조건 불충족 시 INFO 레벨 사용.
+            # 메시지에서 "alert", "No", "threshold" 같은 키워드를 제거하여 Render의 빨간색 자동 강조를 피합니다.
+            logging.info(f"[정상 모니터링] F&G 점수 {current_value_int} ({self.threshold} 초과)")
 
 # =========================================================
 # --- [4-1] 시작 시 상태 메시지 발송 (수정) ---
@@ -267,10 +268,12 @@ async def main_monitor_loop():
     # 시작 시 한 번 발송
     await send_startup_message(cnn_fetcher, alerter)
     while True:
+        # ⚠️ INFO 레벨로 데이터 체크 시작 알림
         logging.info(f"--- 데이터 체크 시작 ({MONITOR_INTERVAL_SECONDS}s 주기) ---")
         try:
             if await cnn_fetcher.fetch_data():
                 fg_score, fg_rating, pc_value, pc_rating = cnn_fetcher.get_results()
+                # ⚠️ INFO 레벨로 데이터 요약 알림
                 logging.info(f"F&G 점수: {fg_score:.2f} ({fg_rating}), P/C 값: {pc_value:.4f}")
                 await alerter.check_and_alert(fg_score, pc_value, pc_rating)
         except Exception as e:
