@@ -235,7 +235,7 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
         f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
         f"5-day average put/call ratio: {pc_value:.4f}\n"
         f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
-        f"시작 일시: {kst_now_str}" # KST 시간으로 표시
+        f"서버 시작: {kst_now_str}" # KST 시간으로 표시
     )
 
     payload = {'chat_id': alerter.chat_id, 'text': message_text, 'parse_mode': 'Markdown'}
@@ -308,5 +308,6 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
