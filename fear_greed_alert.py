@@ -40,7 +40,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')
 
 FEAR_THRESHOLD = 25
-MONITOR_INTERVAL_SECONDS = 60 * 5 # 5분 간격으로 변경하여 무료 서버의 자원 소모를 줄임
+MONITOR_INTERVAL_SECONDS = 60 # 5분 간격으로 변경하여 무료 서버의 자원 소모를 줄임
 
 # 서버 RAM에서 상태 유지 (Render 재시작 시 초기화될 수 있음에 유의)
 status = {"last_alert_date": "1970-01-01", "sent_values_today": []}
@@ -272,4 +272,5 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
