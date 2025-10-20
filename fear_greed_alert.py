@@ -198,9 +198,9 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
         fg_score, fg_rating, pc_value, pc_rating = ERROR_SCORE_VALUE, ERROR_RATING_STR, ERROR_VALUE, ERROR_RATING_STR
 
     message_text = (
-        f"🚀 F&G 모니터링 봇 정상 시작 (Render) 🚀\n\n"
-        f"현재 F&G 지수: {fg_score:.2f} ({fg_rating})\n"
-        f"PUT/CALL 값: {pc_value:.4f} ({pc_rating})\n"
+        f"🚀 공포 탐욕 모니터링 봇 정상 시작 🚀\n\n"
+        f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
+        f"PUT AND CALL OPTIONS: {pc_value:.4f}\n"
         f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
         f"시작 일시: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
     )
@@ -272,3 +272,4 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
