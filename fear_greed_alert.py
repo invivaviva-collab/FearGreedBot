@@ -179,7 +179,8 @@ class FearGreedAlerter:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(self.api_url, data=payload, timeout=10) as resp:
                         resp.raise_for_status()
-                        logging.info(f"텔레그램 알림 발송 성공! 값: {current_value}")
+                        # 🔴 알림 성공 시 ERROR 레벨로 로그 출력 (Render에서 빨간색 강조용)
+                        logging.error(f"🚨 텔레그램 알림 발송 성공! 값: {current_value}")
                         return # 성공 시 종료
             except Exception as e:
                 logging.warning(f"텔레그램 발송 실패 (시도 {attempt + 1}/3): {e}. 잠시 후 재시도.")
@@ -209,7 +210,9 @@ class FearGreedAlerter:
             else:
                 logging.info(f"Duplicate alert skipped: {current_value_int} (already sent today)")
         else:
-            logging.info(f"No alert. Score {current_value_int} above threshold ({self.threshold}).")
+            # 🟢 알림 조건 불충족 시 INFO 레벨 유지 및 [정상 작동] 태그 추가
+            # Render가 초록색으로 강조하지 않을 수 있지만, 'ERROR'와 구별됨
+            logging.info(f"[정상 작동] No alert. Score {current_value_int} above threshold ({self.threshold}).")
 
 # =========================================================
 # --- [4-1] 시작 시 상태 메시지 발송 (수정) ---
