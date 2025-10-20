@@ -164,7 +164,7 @@ class FearGreedAlerter:
             
         pc_ratio_str = f"{option_5d_ratio:.4f}"
         message_text = (
-            f"🚨 공포 탐욕 지수 알림 🚨\n\n"
+            f"🚨 공포/탐욕 지수 알림 🚨\n\n"
             f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
             f"현재 지수: **{current_value}**\n\n"
             f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
@@ -231,9 +231,9 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
     kst_now_str = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S KST')
 
     message_text = (
-        f"🚀 F&G 모니터링 봇 정상 시작 🚀\n\n"
-        f"현재 F&G 지수: {fg_score:.2f} ({fg_rating})\n"
-        f"PUT/CALL 값: {pc_value:.4f} ({pc_rating})\n"
+        f"🚀 공포/탐욕 모니터링 시작 🚀\n\n"
+        f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
+        f"5-day average put/call ratio: {pc_value:.4f}\n"
         f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
         f"시작 일시: {kst_now_str}" # KST 시간으로 표시
     )
@@ -308,4 +308,5 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
