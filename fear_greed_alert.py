@@ -40,7 +40,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')
 
 FEAR_THRESHOLD = 25
-MONITOR_INTERVAL_SECONDS = 60 # 5분 간격으로 변경하여 무료 서버의 자원 소모를 줄임
+MONITOR_INTERVAL_SECONDS = 60 * 5 # 5분 간격으로 변경하여 무료 서버의 자원 소모를 줄임
 
 # 서버 RAM에서 상태 유지 (Render 재시작 시 초기화될 수 있음에 유의)
 status = {"last_alert_date": "1970-01-01", "sent_values_today": []}
@@ -136,7 +136,7 @@ class FearGreedAlerter:
             
         pc_ratio_str = f"{option_5d_ratio:.4f}"
         message_text = (
-            f"🚨 공포 탐욕 지수 알림 🚨\n\n"
+            f"🚨 공포/탐욕 지수 알림 🚨\n\n"
             f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
             f"현재 지수: **{current_value}**\n\n"
             f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
@@ -198,7 +198,7 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
         fg_score, fg_rating, pc_value, pc_rating = ERROR_SCORE_VALUE, ERROR_RATING_STR, ERROR_VALUE, ERROR_RATING_STR
 
     message_text = (
-        f"🚀 공포 탐욕 모니터링 봇 정상 시작 🚀\n\n"
+        f"🚀 공포/탐욕 모니터링 봇 정상 시작 🚀\n\n"
         f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
         f"PUT AND CALL OPTIONS: {pc_value:.4f}\n"
         f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
@@ -272,5 +272,6 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
