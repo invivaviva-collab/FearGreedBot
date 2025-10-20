@@ -220,6 +220,11 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
         logging.error("Telegram credentials missing. Skipping startup message.")
         return
 
+    # --- 파이썬 버전 로그 출력 추가 시작 ---
+    python_version = sys.version.split()[0] 
+    logging.info(f"Python Version: {python_version}") 
+    # --- 파이썬 버전 로그 출력 추가 종료 ---
+
     # 데이터 가져오기는 한 번 더 시도
     success = await cnn_fetcher.fetch_data()
     if success:
@@ -232,6 +237,7 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
 
     message_text = (
         f"🚀 공포/탐욕 모니터링 시작 🚀\n\n"
+        f"Python Version: {python_version}\n" # 텔레그램 메시지에 버전 출력 추가
         f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
         f"5-day average put/call ratio: {pc_value:.4f}\n"
         f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
@@ -308,6 +314,3 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
-
-
-
