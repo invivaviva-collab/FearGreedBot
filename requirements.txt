@@ -1,3 +1,6 @@
+telethon
+pyrogram
 aiohttp
 fastapi
 uvicorn
+pytz
