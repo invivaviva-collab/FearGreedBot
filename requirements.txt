@@ -1,6 +1,4 @@
-telethon
-pyrogram
-aiohttp
 fastapi
 uvicorn
+aiohttp
 pytz
