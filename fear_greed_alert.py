@@ -274,7 +274,7 @@ async def _send_telegram_message(token: str, chat_id: str, message_text: str, lo
                         logging.warning(f"🟡 [정기 보고] 텔레그램 발송 성공 완료")
                     # 🟢 [조건부 알림 성공] INFO 레벨 유지
                     elif log_description == "조건부 알림":
-                        logging.info(f[{log_description}] 텔레그램 발송 성공.")
+                        logging.info(f"[{log_description}] 텔레그램 발송 성공.")
                     # 🔵 [시작 메시지 등 기타] INFO 레벨 유지
                     else: 
                         logging.info(f"[{log_description}] 텔레그램 발송 성공.")
@@ -570,3 +570,4 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
