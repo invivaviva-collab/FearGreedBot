@@ -168,10 +168,10 @@ async def _send_telegram_message(token: str, chat_id: str, message_text: str, lo
                 async with session.post(api_url, data=payload, timeout=10) as resp:
                     resp.raise_for_status()
                     
-                    # 🔴 [정기 보고 성공] ERROR 레벨 (빨간색)
+                    # 🟡 [정기 보고 성공] WARNING 레벨로 변경 (사용자 요청)
                     if log_description == "정기 보고":
-                        logging.error(f"🔴 [정기 보고] 텔레그램 발송 성공 완료")
-                    # 🟢 [조건부 알림 성공] INFO 레벨 (녹색/파란색)
+                        logging.warning(f"🟡 [정기 보고] 텔레그램 발송 성공 완료")
+                    # 🟢 [조건부 알림 성공] INFO 레벨 유지
                     elif log_description == "조건부 알림":
                         logging.info(f"[{log_description}] 텔레그램 발송 성공.")
                     # 🔵 [시작 메시지 등 기타] INFO 레벨 유지
@@ -238,11 +238,11 @@ class ConditionalAlerter:
                 status['sent_values_today'].append(current_value_int)
                 await self._send_alert_message(current_value_int, option_5d_ratio, fear_rating_str)
             else:
-                # 🟠 [조건부 건너뜀] WARNING 레벨 (주황/노란색)
-                logging.warning(f"🟠 [조건부 건너뜀] Duplicate alert skipped: {current_value_int} (already sent today)")
+                # 🔴 [중복 차단] ERROR 레벨로 변경 (사용자 요청)
+                logging.error(f"🔴 [조건부 차단] Duplicate alert blocked: {current_value_int} (already sent today)")
         else:
-            # 🟠 [조건부 건너뜀] WARNING 레벨 (주황/노란색)
-            logging.warning(f"🟠 [조건부 건너뜀] No alert. Score {current_value_int} above threshold ({self.threshold}).")
+            # 🔴 [조건 미충족] ERROR 레벨로 변경 (사용자 요청)
+            logging.error(f"🔴 [조건 미충족] Alert skip. Score {current_value_int} above threshold ({self.threshold}).")
 
 
 # [클래스 2: 정기 보고] (채널 2: 10분 주기, 조건 없이 무조건 발송)
