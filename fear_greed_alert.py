@@ -1,5 +1,6 @@
 import asyncio
 import aiohttp
+import json
 import logging
 import os
 import sys
@@ -19,6 +20,9 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
     stream=sys.stdout # Render 로그 스트림 설정
 )
+logging.getLogger('uvicorn.error').setLevel(logging.WARNING)
+logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
+
 
 # =========================================================
 # --- [2] 전역 설정 및 환경 변수 로드 ---
@@ -38,8 +42,12 @@ STOCK_KR_MAP: Dict[str, str] = {
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')
 
+# Render에서 제공하는 외부 호스트 이름 (슬립 방지용)
+SELF_PING_HOST = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+
 FEAR_THRESHOLD = 25
-MONITOR_INTERVAL_SECONDS = 60 * 5 # 5분 간격으로 변경하여 무료 서버의 자원 소모를 줄임
+MONITOR_INTERVAL_SECONDS = 60 # 5분 간격으로 변경하여 무료 서버의 자원 소모를 줄임  * 5
+SELF_PING_INTERVAL_SECONDS = 60 * 10 # 10분 간격으로 셀프 핑
 
 # 서버 RAM에서 상태 유지 (Render 재시작 시 초기화될 수 있음에 유의)
 status = {"last_alert_date": "1970-01-01", "sent_values_today": []}
@@ -48,15 +56,21 @@ ERROR_SCORE_VALUE = 100.00
 ERROR_VALUE = 100.0000
 ERROR_RATING_STR = "데이터 오류"
 
-# 텔레그램 설정 검사
+# 텔레그램 및 셀프 핑 설정 검사
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_TARGET_CHAT_ID:
     logging.error("TELEGRAM_BOT_TOKEN 또는 CHAT_ID 환경 변수가 설정되지 않았습니다. 알림이 작동하지 않습니다.")
+
+if not SELF_PING_HOST:
+    logging.warning("RENDER_EXTERNAL_HOSTNAME 환경 변수가 설정되지 않았습니다. 슬립 방지 기능이 작동하지 않을 수 있습니다.")
+    SELF_PING_URL = None
+else:
+    SELF_PING_URL = f"https://{SELF_PING_HOST}/"
+    logging.info(f"Self-Ping URL 설정 완료: {SELF_PING_URL}")
 
 # =========================================================
 # --- [3] CNN 데이터 가져오기 (클래스 유지) ---
 # =========================================================
 class CnnFearGreedIndexFetcher:
-    # ... (기존 코드와 동일)
     def __init__(self):
         self.fg_score: Optional[float] = None
         self.fg_rating_kr: Optional[str] = None
@@ -121,7 +135,6 @@ class CnnFearGreedIndexFetcher:
 # --- [4] Telegram 알림 (클래스 유지) ---
 # =========================================================
 class FearGreedAlerter:
-    # ... (기존 코드와 동일)
     def __init__(self, token: str, chat_id: str, threshold: int):
         self.token = token
         self.chat_id = chat_id
@@ -182,7 +195,7 @@ class FearGreedAlerter:
 
 
 # =========================================================
-# --- [4-1] 시작 시 상태 메시지 발송 (수정) ---
+# --- [4-1] 시작 시 상태 메시지 발송 ---
 # =========================================================
 async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: FearGreedAlerter):
     if not alerter.token or not alerter.chat_id:
@@ -200,21 +213,48 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
             f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
             f"5-day average put/call ratio: {pc_value:.4f}\n"
             f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
-            f"발송 일시: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            f"서버 시작: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
     
-
+    alerter_api_url = f"https://api.telegram.org/bot{alerter.token}/sendMessage"
     payload = {'chat_id': alerter.chat_id, 'text': message_text, 'parse_mode': 'Markdown'}
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(alerter.api_url, data=payload, timeout=5) as resp:
+            async with session.post(alerter_api_url, data=payload, timeout=5) as resp:
                 resp.raise_for_status()
                 logging.info("정상 시작 메시지 발송 성공")
         except Exception as e:
             logging.error(f"정상 시작 메시지 발송 실패: {e}")
 
 # =========================================================
-# --- [5] 메인 루프 (백그라운드 작업용) ---
+# --- [5] 서버 슬립 방지 루프 (추가된 부분) ---
+# =========================================================
+async def self_ping_loop():
+    if not SELF_PING_URL:
+        logging.warning("Self-Ping URL이 설정되지 않아 슬립 방지 루프를 시작하지 않습니다.")
+        return
+
+    logging.info("--- 서버 유휴 상태 방지 (Self-Ping) 루프 시작 ---")
+    while True:
+        await asyncio.sleep(SELF_PING_INTERVAL_SECONDS) # 주기적으로 대기
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Health Check 엔드포인트에 요청
+                async with session.get(SELF_PING_URL, timeout=5) as resp:
+                    status_code = resp.status
+                    if status_code == 200:
+                        logging.debug(f"Self-Ping 성공 ({status_code}). 서버 유휴 타이머 리셋됨.")
+                    else:
+                        logging.warning(f"Self-Ping 비정상 응답 ({status_code}).")
+                    
+        except asyncio.TimeoutError:
+            logging.warning("Self-Ping 시간 초과 (Timeout Error).")
+        except Exception as e:
+            logging.error(f"Self-Ping 오류: {e}")
+
+
+# =========================================================
+# --- [6] 메인 모니터링 루프 (백그라운드 작업용) ---
 # =========================================================
 async def main_monitor_loop():
     logging.info("--- F&G 모니터링 프로그램 (백그라운드) 시작 ---")
@@ -238,7 +278,7 @@ async def main_monitor_loop():
         await asyncio.sleep(MONITOR_INTERVAL_SECONDS)
 
 # =========================================================
-# --- [6] FastAPI 웹 서비스 설정 ---
+# --- [7] FastAPI 웹 서비스 설정 ---
 # =========================================================
 app = FastAPI(
     title="Fear & Greed Monitor",
@@ -249,22 +289,25 @@ app = FastAPI(
 # 서버 시작 시 백그라운드 작업 시작
 @app.on_event("startup")
 async def startup_event():
-    logging.info("FastAPI Server Startup: Launching main_monitor_loop as a background task.")
-    # 모니터링 루프를 독립적인 비동기 작업으로 실행
+    logging.info("FastAPI Server Startup: Launching main_monitor_loop and self_ping_loop as background tasks.")
+    # 1. 모니터링 루프를 독립적인 비동기 작업으로 실행
     asyncio.create_task(main_monitor_loop())
+    # 2. 서버 슬립 방지 루프를 독립적인 비동기 작업으로 실행 (추가됨)
+    asyncio.create_task(self_ping_loop())
 
 # Health Check Endpoint (Render가 서버가 살아있는지 확인하는 용도)
 @app.get("/")
 async def health_check():
     return {
         "status": "running", 
-        "message": "F&G monitor is active in the background.",
+        "message": "F&G monitor and self-ping are active in the background.",
         "last_alert_date": status.get('last_alert_date'),
-        "sent_values_today": status.get('sent_values_today')
+        "sent_values_today": status.get('sent_values_today'),
+        "ping_url_active": SELF_PING_URL is not None
     }
 
 # =========================================================
-# --- [7] 실행 ---
+# --- [8] 실행 ---
 # =========================================================
 if __name__ == '__main__':
     # Render는 환경 변수로 PORT를 제공합니다.
