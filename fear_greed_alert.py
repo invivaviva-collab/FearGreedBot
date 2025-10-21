@@ -263,11 +263,12 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
 
     # [채널 1] 조건부 알림 채널에 전용 시작 메시지 발송
     if conditional_alerter.chat_id:
-        message_ch1 = (f"🚀 조건부 알림 모니터링 시작 (채널 1) 🚀\n\n"
-                       f"✅ 주기: {MONITOR_INTERVAL_SECONDS}초\n"
-                       f"✅ 발송 조건: F&G 지수 $\le {FEAR_THRESHOLD}$ 일 때만 (동일 값 하루 중복 방지)\n"
-                       f"{common_info}"
-                       )
+        message_ch1 = (f"🚀 공포/탐욕 모니터링 시작 🚀\n\n"
+                        f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
+                        f"5-day average put/call ratio: {pc_value:.4f}\n"
+                        f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
+                        f"서버 시작: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+                    )
         await _send_telegram_message(conditional_alerter.token, conditional_alerter.chat_id, message_ch1, "시작 메시지_CH1")
 
     # [채널 2] 정기 보고 채널에 전용 시작 메시지 발송
@@ -414,3 +415,4 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
