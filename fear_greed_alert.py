@@ -1,6 +1,5 @@
 import asyncio
 import aiohttp
-import json
 import logging
 import os
 import sys
