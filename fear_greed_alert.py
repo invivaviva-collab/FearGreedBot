@@ -216,7 +216,7 @@ def get_server_info(app_version: str) -> str:
         
         hardware_info = (
             # CPU
-            f"\n\n➡️ CPU Cores (P/L): `{cpu_physical_cores}/{cpu_logical_cores}`\n"
+            f"➡️ CPU Cores (P/L): `{cpu_physical_cores}/{cpu_logical_cores}`\n"
             f"➡️ Current CPU Load: `{current_cpu_load:.1f}%`\n"
             # RAM
             f"➡️ Total RAM: `{total_ram_gb:.2f} GB`\n"
@@ -563,5 +563,6 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
