@@ -215,24 +215,17 @@ def get_server_info(app_version: str) -> str:
         user_list = ', '.join([u.name for u in users]) if users else "없음"
         
         hardware_info = (
-            f"\n\n--- 📊 시스템 자원 상세 ---\n\n"
             # CPU
-            f"➡️ CPU Cores (P/L): `{cpu_physical_cores}/{cpu_logical_cores}`\n"
-            f"➡️ Current CPU Load: `{current_cpu_load:.1f}%`\n\n"
+            f"\n\n➡️ CPU Cores (P/L): `{cpu_physical_cores}/{cpu_logical_cores}`\n"
+            f"➡️ Current CPU Load: `{current_cpu_load:.1f}%`\n"
             # RAM
             f"➡️ Total RAM: `{total_ram_gb:.2f} GB`\n"
-            f"➡️ RAM Used: `{used_ram_percent:.1f}%`\n\n"
-            # Swap
-            f"➡️ Total Swap: `{total_swap_mb:.1f} MB`\n"
-            f"➡️ Swap Used: `{used_swap_percent:.1f}%`\n\n"
+            f"➡️ RAM Used: `{used_ram_percent:.1f}%`\n"
             # Disk
             f"➡️ Total Disk: `{total_disk_gb:.2f} GB`\n"
-            f"➡️ Disk Used: `{used_disk_gb:.2f} GB` (`{used_disk_percent:.1f}%`)\n\n"
-            # Network
-            f"➡️ Net Sent/Recv: `{bytes_sent_mb:.2f} MB / {bytes_recv_mb:.2f} MB`\n"
+            f"➡️ Disk Used: `{used_disk_gb:.2f} GB` (`{used_disk_percent:.1f}%`)\n"
             # Boot & User
             f"➡️ Boot Time: `{boot_time_str}`\n"
-            f"➡️ Logged Users: `{user_list}`"
         )
         
     except Exception as e:
@@ -570,4 +563,5 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
