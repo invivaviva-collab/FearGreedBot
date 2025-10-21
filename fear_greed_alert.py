@@ -6,7 +6,7 @@ import os
 import sys
 from datetime import datetime, timedelta, date
 from typing import Optional, Dict, Any, Tuple
-from zoneinfo import ZoneInfo # <--- 추가: zoneinfo 모듈 사용
+from zoneinfo import ZoneInfo
 
 # FastAPI 및 uvicorn import (웹 서비스 구동을 위해 필요)
 from fastapi import FastAPI, Request
@@ -39,10 +39,13 @@ STOCK_KR_MAP: Dict[str, str] = {
     "n/a": "데이터 없음"
 }
 
-# ⚠️ 환경 변수에서 2개의 텔레그램 채팅방 ID 로드
+# ⚠️ 텔레그램 설정 로드
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')  # [채널 1] 조건부 알림 (5분)
-TELEGRAM_TARGET_CHAT_ID_REPORT = os.environ.get('TELEGRAM_TARGET_CHAT_ID_REPORT') # [채널 2] 정기 보고 (10분)
+TELEGRAM_TARGET_CHAT_ID_REPORT = os.environ.get('TELEGRAM_TARGET_CHAT_ID_REPORT') # [채널 2] 정기 보고 대상 ID
+
+# 🚨 정기 보고 활성화 스위치 (기본값: False)
+REPORT_ENABLED = os.environ.get('ENABLE_PERIODIC_REPORT', 'False').lower() in ('true', '1', 't')
 
 # Render에서 제공하는 외부 호스트 이름 (슬립 방지용)
 SELF_PING_HOST = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
@@ -67,12 +70,18 @@ ERROR_RATING_STR = "데이터 오류"
 if not TELEGRAM_BOT_TOKEN:
     logging.error("TELEGRAM_BOT_TOKEN 환경 변수가 설정되지 않았습니다. 알림이 작동하지 않습니다.")
 
-if not TELEGRAM_TARGET_CHAT_ID and not TELEGRAM_TARGET_CHAT_ID_REPORT:
-    logging.error("TELEGRAM_TARGET_CHAT_ID 와 TELEGRAM_TARGET_CHAT_ID_REPORT 모두 설정되지 않았습니다.")
-elif not TELEGRAM_TARGET_CHAT_ID:
+if not TELEGRAM_TARGET_CHAT_ID:
     logging.warning("[채널 1] TELEGRAM_TARGET_CHAT_ID가 없어 조건부 알림은 작동하지 않습니다.")
-elif not TELEGRAM_TARGET_CHAT_ID_REPORT:
-    logging.warning("[채널 2] TELEGRAM_TARGET_CHAT_ID_REPORT가 없어 정기 보고는 작동하지 않습니다.")
+    
+# 🔔 정기 보고 상태 로깅 강화
+if REPORT_ENABLED:
+    if not TELEGRAM_TARGET_CHAT_ID_REPORT:
+        logging.error("[채널 2] 정기 보고가 활성화되었으나 TELEGRAM_TARGET_CHAT_ID_REPORT가 없습니다. 보고 기능이 작동하지 않습니다.")
+    else:
+        logging.info("🟢 [채널 2] 정기 보고 기능이 활성화되었습니다.")
+else:
+    logging.warning("🔴 [채널 2] 정기 보고 기능이 비활성화되었습니다. (ENABLE_PERIODIC_REPORT=False)")
+
 
 # Self-Ping URL 설정
 if not SELF_PING_HOST:
@@ -102,7 +111,8 @@ class CnnFearGreedIndexFetcher:
     async def fetch_data(self) -> bool:
         self._set_error_values()
         cnn_fetch_success = False
-        today = datetime.now(KST).date() # KST 기준으로 날짜 확인
+        # KST 기준으로 날짜 확인 (데이터가 업데이트되지 않았을 경우 전날 데이터도 확인)
+        today = datetime.now(KST).date() 
         dates_to_try = [today.strftime("%Y-%m-%d"), (today - timedelta(days=1)).strftime("%Y-%m-%d")]
 
         # Timeout을 짧게 조정
@@ -116,7 +126,7 @@ class CnnFearGreedIndexFetcher:
                             logging.warning(f"HTTP 404 Not Found for {date_str}")
                             continue
                         # 4xx, 5xx 에러 발생 시 예외 처리
-                        resp.raise_for_status() 
+                        resp.raise_for_status()  
                         data: Dict[str, Any] = await resp.json()
 
                         fg_data = data.get("fear_and_greed", {})
@@ -211,7 +221,7 @@ class ConditionalAlerter:
             f"현재 지수: **{current_value}**\n\n"
             f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
             f"5-day average put/call ratio: **{pc_ratio_str}**\n\n"
-            f"발송 일시: {kst_time} KST" # <--- KST 표시
+            f"발송 일시: {kst_time} KST"
         )
         await _send_telegram_message(self.token, self.chat_id, message_text, "조건부 알림")
 
@@ -272,11 +282,11 @@ class PeriodicReporter:
         message_text = (
             f"{title}\n\n" 
             f"➡️ FEAR & GREED INDEX: {fg_score_str}\n"
-            f"   - Rating: {fg_rating_str}\n\n"
+            f"   - Rating: {fg_rating_str}\n\n"
             f"➡️ PUT AND CALL OPTIONS:\n"
-            f"   - Rating: `{pc_rating}`\n"
-            f"   - P/C Ratio (5-day avg): **{pc_ratio_str}**\n\n"
-            f"발송 일시: {kst_time} KST" # <--- KST 표시
+            f"   - Rating: `{pc_rating}`\n"
+            f"   - P/C Ratio (5-day avg): **{pc_ratio_str}**\n\n"
+            f"발송 일시: {kst_time} KST"
         )
         await _send_telegram_message(self.token, self.chat_id, message_text, "정기 보고")
 
@@ -301,27 +311,25 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
     # 🇰🇷 KST 시간 적용 (zoneinfo 사용)
     kst_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
     
-    common_info = (f"현재 F&G 지수: {fg_score:.2f} ({fg_rating})\n"
-                   f"P/C Ratio (5일): {pc_value:.4f}\n"
-                   f"서버 시작: {kst_time} KST") # <--- KST 표시
-
     # [채널 1] 조건부 알림 채널에 전용 시작 메시지 발송
     if conditional_alerter.chat_id:
         message_ch1 = (f"🚀 공포/탐욕 모니터링 시작 🚀\n\n"
                         f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
                         f"5-day average put/call ratio: {pc_value:.4f}\n"
                         f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
-                        f"서버 시작: {kst_time} KST" # <--- KST 표시
+                        f"서버 시작: {kst_time} KST"
                     )
         await _send_telegram_message(conditional_alerter.token, conditional_alerter.chat_id, message_ch1, "시작 메시지_CH1")
 
-    # [채널 2] 정기 보고 채널에 전용 시작 메시지 발송
-    if periodic_reporter.chat_id:
-        message_ch2 = (f"📈 정기 보고 모니터링 시작 📈\n\n"
-                       f"✅ 주기: {REPORT_INTERVAL_SECONDS}초\n"
-                       f"✅ 발송 조건: 무조건 발송\n"
-                       f"{common_info}"
-                       )
+    # [채널 2] 정기 보고 채널에 전용 시작 메시지 발송 (기능 활성화 시에만)
+    if periodic_reporter.chat_id and REPORT_ENABLED:
+        message_ch2 = (f"📈 정기 보고 모니터링 시작 (활성화) 📈\n\n"
+                        f"✅ 주기: {REPORT_INTERVAL_SECONDS}초\n"
+                        f"✅ 발송 조건: 무조건 발송\n"
+                        f"현재 F&G 지수: {fg_score:.2f} ({fg_rating})\n"
+                        f"P/C Ratio (5일): {pc_value:.4f}\n"
+                        f"서버 시작: {kst_time} KST"
+                        )
         # 시작 메시지는 INFO 레벨로 출력
         await _send_telegram_message(periodic_reporter.token, periodic_reporter.chat_id, message_ch2, "시작 메시지_CH2")
 
@@ -377,6 +385,7 @@ async def main_monitor_loop(alerter: ConditionalAlerter):
 # --- [7] 정기 보고 루프 (채널 2: 10분 무조건 발송) ---
 # =========================================================
 async def periodic_report_loop(reporter: PeriodicReporter):
+    # REPORT_ENABLED가 True일 때만 이 루프가 호출됨.
     logging.info(f"--- F&G 정기 보고 (백그라운드) 시작. 주기: {REPORT_INTERVAL_SECONDS}s ---")
     cnn_fetcher = CnnFearGreedIndexFetcher()
     
@@ -421,12 +430,14 @@ async def startup_event():
     
     # 3. 백그라운드 루프 실행
     if conditional_alerter.chat_id:
-        # 채널 1: 조건부 알림 루프 (5분)
+        # 채널 1: 조건부 알림 루프 (5분) - 항상 활성화
         asyncio.create_task(main_monitor_loop(conditional_alerter))
     
-    if periodic_reporter.chat_id:
-        # 채널 2: 정기 보고 루프 (10분)
+    if periodic_reporter.chat_id and REPORT_ENABLED: # 🚨 REPORT_ENABLED 스위치 추가
+        # 채널 2: 정기 보고 루프 (10분) - 스위치 활성화 시에만 실행
         asyncio.create_task(periodic_report_loop(periodic_reporter))
+    elif REPORT_ENABLED:
+        logging.error("정기 보고를 활성화했지만, TELEGRAM_TARGET_CHAT_ID_REPORT가 설정되지 않아 루프를 시작하지 않습니다.")
 
     # 서버 슬립 방지 루프 실행
     asyncio.create_task(self_ping_loop())
@@ -446,6 +457,7 @@ async def health_check():
             "description": "5분 주기, F&G <= 25 조건부 발송 (동일 값 중복 방지)"
         },
         "channel_2_status": {
+            "is_enabled": REPORT_ENABLED, # 🚨 활성화 상태 추가
             "target_chat_id_set": TELEGRAM_TARGET_CHAT_ID_REPORT is not None,
             "report_interval_seconds": REPORT_INTERVAL_SECONDS,
             "description": "10분 주기, 조건 없이 무조건 발송"
@@ -462,4 +474,3 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
-
