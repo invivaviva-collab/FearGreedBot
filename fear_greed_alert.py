@@ -159,17 +159,41 @@ async def _send_telegram_message(token: str, chat_id: str, message_text: str, lo
     api_url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {'chat_id': chat_id, 'text': message_text, 'parse_mode': 'Markdown'}
 
+    # 로그 구분선 정의
+    SEPARATOR = "========================================================================"
+    
     for attempt in range(3):
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(api_url, data=payload, timeout=10) as resp:
                     resp.raise_for_status()
-                    logging.info(f"[{log_description}] 텔레그램 발송 성공.")
+                    
+                    # 🔴 [정기 보고 성공] ERROR 레벨 (빨간색)
+                    if log_description == "정기 보고":
+                        logging.error(f"🔴 {SEPARATOR}")
+                        logging.error(f"🔴 [정기 보고] 텔레그램 발송 성공 완료")
+                        logging.error(f"🔴 {SEPARATOR}")
+                    # 🟢 [조건부 알림 성공] INFO 레벨 (녹색/파란색)
+                    elif log_description == "조건부 알림":
+                        logging.info(f"[{log_description}] 텔레그램 발송 성공.")
+                    # 🔵 [시작 메시지 등 기타] INFO 레벨 유지
+                    else: 
+                        logging.info(f"[{log_description}] 텔레그램 발송 성공.")
+                        
                     return
         except Exception as e:
+            # 🔴 [모든 채널 최종 실패] ERROR 레벨 (빨간색)
+            if attempt == 2:
+                logging.error(f"🔴 {SEPARATOR}")
+                logging.error(f"🔴 [{log_description}] 텔레그램 발송 최종 실패: {e}")
+                logging.error(f"🔴 {SEPARATOR}")
+                return
+            
+            # 일반 실패 경고는 WARNING 레벨 유지 (주황/노란색)
             logging.warning(f"[{log_description}] 텔레그램 발송 실패 (시도 {attempt + 1}/3): {e}. 잠시 후 재시도.")
             await asyncio.sleep(2 ** attempt)
-    logging.error(f"[{log_description}] 텔레그램 발송 최종 실패.")
+            
+    # 최종 실패는 위의 attempt == 2에서 처리되므로 여기는 도달하지 않음
 
 
 # [클래스 1: 조건부 알림] (채널 1: 5분 주기, F&G <= 25일 때, 동일 값 중복 방지)
@@ -213,9 +237,11 @@ class ConditionalAlerter:
                 status['sent_values_today'].append(current_value_int)
                 await self._send_alert_message(current_value_int, option_5d_ratio, fear_rating_str)
             else:
-                logging.info(f"[조건부] Duplicate alert skipped: {current_value_int} (already sent today)")
+                # 🟠 [조건부 건너뜀] WARNING 레벨 (주황/노란색)
+                logging.warning(f"🟠 [조건부 건너뜀] Duplicate alert skipped: {current_value_int} (already sent today)")
         else:
-            logging.info(f"[조건부] No alert. Score {current_value_int} above threshold ({self.threshold}).")
+            # 🟠 [조건부 건너뜀] WARNING 레벨 (주황/노란색)
+            logging.warning(f"🟠 [조건부 건너뜀] No alert. Score {current_value_int} above threshold ({self.threshold}).")
 
 
 # [클래스 2: 정기 보고] (채널 2: 10분 주기, 조건 없이 무조건 발송)
@@ -227,11 +253,22 @@ class PeriodicReporter:
     async def _send_report_message(self, fg_score: float, fg_rating: str, pc_value: float, pc_rating: str):
         pc_ratio_str = f"{pc_value:.4f}"
         
-        # ⚠️ [수정] 정기 보고 메시지 제목을 명확히 변경
+        # 이전 응답에서 추가된, 점수에 따른 제목/내용 강조 로직을 유지합니다.
+        if fg_score <= FEAR_THRESHOLD:
+            # 25 이하일 때 (극단적 공포)
+            title = "🚨 [긴급] 10분 주기 지수 보고 🚨"
+            fg_score_str = f"**🔥 {fg_score:.2f} 🔥**" # 점수 빨간색으로 하이라이트 효과
+            fg_rating_str = f"`❗ {fg_rating} ❗`"
+        else:
+            # 26 이상일 때 (일반)
+            title = "📊 10분 주기 지수 보고 📊"
+            fg_score_str = f"**{fg_score:.2f}**"
+            fg_rating_str = f"`{fg_rating}`"
+
         message_text = (
-            f"📊 10분 주기 지수 보고 📊\n\n" 
-            f"➡️ FEAR & GREED INDEX: **{fg_score:.2f}**\n"
-            f"   - Rating: `{fg_rating}`\n\n"
+            f"{title}\n\n" 
+            f"➡️ FEAR & GREED INDEX: {fg_score_str}\n"
+            f"   - Rating: {fg_rating_str}\n\n"
             f"➡️ PUT AND CALL OPTIONS:\n"
             f"   - Rating: `{pc_rating}`\n"
             f"   - P/C Ratio (5-day avg): **{pc_ratio_str}**\n\n"
@@ -278,6 +315,7 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
                        f"✅ 발송 조건: 무조건 발송\n"
                        f"{common_info}"
                        )
+        # 시작 메시지는 INFO 레벨로 출력
         await _send_telegram_message(periodic_reporter.token, periodic_reporter.chat_id, message_ch2, "시작 메시지_CH2")
 
 
@@ -316,6 +354,7 @@ async def main_monitor_loop(alerter: ConditionalAlerter):
     cnn_fetcher = CnnFearGreedIndexFetcher()
     
     while True:
+        # [조건부] 알림 체크는 INFO 레벨 유지
         logging.info(f"[조건부] 데이터 체크 시작 ({MONITOR_INTERVAL_SECONDS}s 주기)")
         try:
             if await cnn_fetcher.fetch_data():
@@ -338,6 +377,7 @@ async def periodic_report_loop(reporter: PeriodicReporter):
     await asyncio.sleep(REPORT_INTERVAL_SECONDS / 2) 
 
     while True:
+        # [정기보고] 데이터 체크는 INFO 레벨 유지
         logging.info(f"[정기보고] 데이터 체크 시작 ({REPORT_INTERVAL_SECONDS}s 주기)")
         try:
             if await cnn_fetcher.fetch_data():
@@ -415,4 +455,3 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
-
