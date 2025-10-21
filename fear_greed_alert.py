@@ -213,7 +213,7 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
             f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
             f"5-day average put/call ratio: {pc_value:.4f}\n"
             f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
-            f"발송 일시: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            f"서버 시작: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
     
     alerter_api_url = f"https://api.telegram.org/bot{alerter.token}/sendMessage"
@@ -315,3 +315,4 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
