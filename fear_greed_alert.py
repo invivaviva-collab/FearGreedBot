@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, date
 from typing import Optional, Dict, Any, Tuple
 
 # FastAPI 및 uvicorn import (웹 서비스 구동을 위해 필요)
-from fastapi import FastAPI, Request # Request 임포트 추가
+from fastapi import FastAPI
 import uvicorn
 
 # =========================================================
@@ -26,7 +26,6 @@ logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
 
 # =========================================================
 # --- [2] 전역 설정 및 환경 변수 로드 ---
-# --- 불필요한 SELF_PING 설정 제거됨 ---
 # =========================================================
 CNN_BASE_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/"
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Render FG Monitor)'}
@@ -43,12 +42,10 @@ STOCK_KR_MAP: Dict[str, str] = {
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')
 
-FEAR_THRESHOLD = 25
-# 서버가 5분 주기(300s)로 모니터링되도록 설정 (Render 무료 티어 자원 소모 최소화)
+# 5분 간격으로 무조건 발송
 MONITOR_INTERVAL_SECONDS = 300 
 
-# 서버 RAM에서 상태 유지 (Render 재시작 시 초기화될 수 있음에 유의)
-status = {"last_alert_date": "1970-01-01", "sent_values_today": []}
+# ❌ 무조건 발송을 위해 status 변수 제거
 
 ERROR_SCORE_VALUE = 100.00
 ERROR_VALUE = 100.0000
@@ -58,10 +55,9 @@ ERROR_RATING_STR = "데이터 오류"
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_TARGET_CHAT_ID:
     logging.error("TELEGRAM_BOT_TOKEN 또는 CHAT_ID 환경 변수가 설정되지 않았습니다. 알림이 작동하지 않습니다.")
 
-# 이전 SELF_PING 관련 설정 제거됨
-
 # =========================================================
 # --- [3] CNN 데이터 가져오기 (클래스 유지) ---
+# ... (내용 변경 없음)
 # =========================================================
 class CnnFearGreedIndexFetcher:
     def __init__(self):
@@ -92,8 +88,7 @@ class CnnFearGreedIndexFetcher:
                         if resp.status == 404:
                             logging.warning(f"HTTP 404 Not Found for {date_str}")
                             continue
-                        # 4xx, 5xx 에러 발생 시 예외 처리
-                        resp.raise_for_status() 
+                        resp.raise_for_status()
                         data: Dict[str, Any] = await resp.json()
 
                         fg_data = data.get("fear_and_greed", {})
@@ -111,7 +106,6 @@ class CnnFearGreedIndexFetcher:
                         cnn_fetch_success = True
                         break
                 except Exception as e:
-                    # IP 차단, 연결 오류 등을 여기서 포착하여 로그에 기록
                     logging.error(f"Error fetching CNN data for {date_str}: {e}")
                     continue
 
@@ -127,38 +121,40 @@ class CnnFearGreedIndexFetcher:
 
 
 # =========================================================
-# --- [4] Telegram 알림 (클래스 유지) ---
+# --- [4] Telegram 알림 ---
 # =========================================================
 class FearGreedAlerter:
-    def __init__(self, token: str, chat_id: str, threshold: int):
+    # ❌ threshold 제거 (더 이상 조건 없이 발송)
+    def __init__(self, token: str, chat_id: str):
         self.token = token
         self.chat_id = chat_id
-        self.threshold = threshold
         self.api_url = f"https://api.telegram.org/bot{self.token}/sendMessage" # API URL 정의
 
-    async def _send_telegram_alert(self, current_value: int, option_5d_ratio: float, fear_rating_str: str):
+    async def _send_telegram_report(self, current_value: float, rating_str: str, option_5d_ratio: float, pc_rating_str: str):
         if not self.token or not self.chat_id:
             logging.error("Telegram credentials missing. Skipping alert send.")
             return
             
         pc_ratio_str = f"{option_5d_ratio:.4f}"
+        
+        # 메시지 제목을 "주기적 지수 보고"로 변경
         message_text = (
-            f"🚨 공포 탐욕 지수 알림 🚨\n\n"
-            f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
-            f"현재 지수: **{current_value}**\n\n"
-            f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
-            f"5-day average put/call ratio: **{pc_ratio_str}**\n\n"
+            f"📊 5분 주기 지수 보고 📊\n\n"
+            f"➡️ FEAR & GREED INDEX: **{current_value:.2f}**\n"
+            f"   - Rating: `{rating_str}`\n\n"
+            f"➡️ PUT AND CALL OPTIONS:\n"
+            f"   - Rating: `{pc_rating_str}`\n"
+            f"   - P/C Ratio (5-day avg): **{pc_ratio_str}**\n\n"
             f"발송 일시: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
         payload = {'chat_id': self.chat_id, 'text': message_text, 'parse_mode': 'Markdown'}
         # 재시도 로직 추가 (Render 환경에서는 네트워크 이슈가 있을 수 있음)
         for attempt in range(3):
             try:
-                # 클래스에 정의된 self.api_url 사용
                 async with aiohttp.ClientSession() as session:
                     async with session.post(self.api_url, data=payload, timeout=10) as resp:
                         resp.raise_for_status()
-                        logging.info(f"텔레그램 알림 발송 성공! 값: {current_value}")
+                        logging.info(f"텔레그램 주기적 보고 발송 성공! FG 값: {current_value:.2f}")
                         return # 성공 시 종료
             except Exception as e:
                 logging.warning(f"텔레그램 발송 실패 (시도 {attempt + 1}/3): {e}. 잠시 후 재시도.")
@@ -166,28 +162,20 @@ class FearGreedAlerter:
         logging.error("텔레그램 발송 최종 실패.")
 
 
-    async def check_and_alert(self, current_index_value, option_5d_ratio, fear_rating_str):
+    # 💡 [핵심 수정] 조건이나 중복 확인 없이 무조건 텔레그램 보고서를 발송합니다.
+    async def check_and_alert(self, current_index_value, rating_str, option_5d_ratio, pc_rating_str):
         try:
-            current_value_int = round(float(current_index_value))
+            current_value_float = float(current_index_value)
         except:
             logging.warning(f"Invalid F&G value: {current_index_value}")
             return
-
-        today_str = date.today().strftime("%Y-%m-%d")
-        if status['last_alert_date'] != today_str:
-            status['last_alert_date'] = today_str
-            status['sent_values_today'] = []
-            logging.info(f"날짜 변경 감지. 오늘의 발송 목록 초기화: {today_str}")
-
-        if current_value_int <= self.threshold:
-            # 극단적 공포 범위(0-25) 내에서 값이 변경될 때만 알림
-            if current_value_int not in status['sent_values_today']:
-                status['sent_values_today'].append(current_value_int)
-                await self._send_telegram_alert(current_value_int, option_5d_ratio, fear_rating_str)
-            else:
-                logging.info(f"Duplicate alert skipped: {current_value_int} (already sent today)")
-        else:
-            logging.info(f"No alert. Score {current_value_int} above threshold ({self.threshold}).")
+        
+        # 조건 없이 즉시 보고서를 발송
+        await self._send_telegram_report(current_value_float, rating_str, option_5d_ratio, pc_rating_str)
+        
+        # ❌ 조건부 알림 로직 제거
+        # ❌ status 업데이트 로직 제거
+        # ❌ No alert 로그 제거
 
 
 # =========================================================
@@ -205,14 +193,13 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
     else:
         fg_score, fg_rating, pc_value, pc_rating = ERROR_SCORE_VALUE, ERROR_RATING_STR, ERROR_VALUE, ERROR_RATING_STR
 
-    message_text = (f"🚀 공포/탐욕 모니터링 시작 🚀\n\n"
+    message_text = (f"🚀 공포/탐욕 모니터링 시작 (주기적 보고 모드) 🚀\n\n"
             f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
             f"5-day average put/call ratio: {pc_value:.4f}\n"
-            f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
+            f"보고 주기: **{MONITOR_INTERVAL_SECONDS}초 (5분)**\n\n"
             f"서버 시작: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
     
-    # 수정: Alerter 클래스에 정의된 api_url을 직접 사용 (중복 제거)
     payload = {'chat_id': alerter.chat_id, 'text': message_text, 'parse_mode': 'Markdown'}
     async with aiohttp.ClientSession() as session:
         try:
@@ -223,18 +210,13 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
             logging.error(f"정상 시작 메시지 발송 실패: {e}")
 
 # =========================================================
-# --- [5] 서버 슬립 방지 루프 (제거됨) ---
-# =========================================================
-# self_ping_loop 함수와 관련 코드를 완전히 제거했습니다.
-# 외부 모니터링 서비스(UptimeRobot 등)를 통해 슬립을 방지합니다.
-
-# =========================================================
-# --- [6] 메인 모니터링 루프 (백그라운드 작업용) ---
+# --- [5] 메인 모니터링 루프 (백그라운드 작업용) ---
 # =========================================================
 async def main_monitor_loop():
     logging.info("--- F&G 모니터링 프로그램 (백그라운드) 시작 ---")
     cnn_fetcher = CnnFearGreedIndexFetcher()
-    alerter = FearGreedAlerter(TELEGRAM_BOT_TOKEN, TELEGRAM_TARGET_CHAT_ID, FEAR_THRESHOLD)
+    # ❌ FEAR_THRESHOLD 제거하고 alerter 초기화
+    alerter = FearGreedAlerter(TELEGRAM_BOT_TOKEN, TELEGRAM_TARGET_CHAT_ID) 
 
     # 시작 시 한 번 발송
     await send_startup_message(cnn_fetcher, alerter)
@@ -245,15 +227,18 @@ async def main_monitor_loop():
             if await cnn_fetcher.fetch_data():
                 fg_score, fg_rating, pc_value, pc_rating = cnn_fetcher.get_results()
                 logging.info(f"F&G 점수: {fg_score:.2f} ({fg_rating}), P/C 값: {pc_value:.4f}")
-                await alerter.check_and_alert(fg_score, pc_value, pc_rating)
+                # 💡 [핵심 수정] 무조건 알림 발송
+                await alerter.check_and_alert(fg_score, fg_rating, pc_value, pc_rating)
+            else:
+                 # 데이터 획득 실패 시에도 알림을 원할 경우 여기에 알림 로직 추가 가능
+                 logging.warning("데이터 획득 실패. 이번 주기 알림 건너뜁니다.")
         except Exception as e:
             logging.error(f"모니터링 루프 중 오류: {e}")
         
-        # Render Free Tier에서 너무 잦은 요청은 피하기 위해 대기 시간 사용
         await asyncio.sleep(MONITOR_INTERVAL_SECONDS)
 
 # =========================================================
-# --- [7] FastAPI 웹 서비스 설정 ---
+# --- [6] FastAPI 웹 서비스 설정 ---
 # =========================================================
 app = FastAPI(
     title="Fear & Greed Monitor",
@@ -264,25 +249,27 @@ app = FastAPI(
 # 서버 시작 시 백그라운드 작업 시작
 @app.on_event("startup")
 async def startup_event():
-    # 이제 self_ping_loop 없이 main_monitor_loop만 실행됩니다.
-    logging.info("FastAPI Server Startup: Launching main_monitor_loop as a background task.")
+    logging.info("FastAPI Server Startup: Launching main_monitor_loop as a background task (External ping active).")
+    # 1. 모니터링 루프를 독립적인 비동기 작업으로 실행
     asyncio.create_task(main_monitor_loop())
-    # self_ping_loop 제거됨
 
-# Health Check Endpoint (외부 모니터링 서비스가 사용자의 서버 상태를 확인하는 용도)
+# 🚀 UptimeRobot의 HEAD 요청을 처리하여 405 에러를 방지합니다.
+@app.head("/")
+async def health_check_head():
+    # HEAD 요청은 본문을 반환하지 않고 200 OK 상태만 반환합니다.
+    return {"status": "running"}
+
+# Health Check Endpoint (Render가 서버가 살아있는지 확인하는 용도)
 @app.get("/")
-@app.head("/") # HEAD 요청 추가
 async def health_check():
     return {
         "status": "running", 
-        "message": "F&G monitor is active in the background.",
-        "last_alert_date": status.get('last_alert_date'),
-        "sent_values_today": status.get('sent_values_today'),
-        # self_ping_url 관련 정보 제거됨
+        "message": "F&G monitor is active in the background. Sending report every 5 minutes regardless of score.",
+        # ❌ status 변수가 제거되어 해당 정보는 제공하지 않음
     }
 
 # =========================================================
-# --- [8] 실행 ---
+# --- [7] 실행 ---
 # =========================================================
 if __name__ == '__main__':
     # Render는 환경 변수로 PORT를 제공합니다.
