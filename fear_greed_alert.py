@@ -26,6 +26,7 @@ logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
 
 # =========================================================
 # --- [2] 전역 설정 및 환경 변수 로드 ---
+# --- 불필요한 SELF_PING 설정 제거됨 ---
 # =========================================================
 CNN_BASE_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/"
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Render FG Monitor)'}
@@ -42,12 +43,9 @@ STOCK_KR_MAP: Dict[str, str] = {
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')
 
-# Render에서 제공하는 외부 호스트 이름 (슬립 방지용)
-SELF_PING_HOST = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
-
 FEAR_THRESHOLD = 25
-MONITOR_INTERVAL_SECONDS = 60 # 5분 간격으로 수정하여 무료 서버의 자원 소모를 줄임
-SELF_PING_INTERVAL_SECONDS = 60 * 5 # 10분 간격으로 셀프 핑
+# 서버가 5분 주기(300s)로 모니터링되도록 설정 (Render 무료 티어 자원 소모 최소화)
+MONITOR_INTERVAL_SECONDS = 300 
 
 # 서버 RAM에서 상태 유지 (Render 재시작 시 초기화될 수 있음에 유의)
 status = {"last_alert_date": "1970-01-01", "sent_values_today": []}
@@ -56,16 +54,11 @@ ERROR_SCORE_VALUE = 100.00
 ERROR_VALUE = 100.0000
 ERROR_RATING_STR = "데이터 오류"
 
-# 텔레그램 및 셀프 핑 설정 검사
+# 텔레그램 설정 검사
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_TARGET_CHAT_ID:
     logging.error("TELEGRAM_BOT_TOKEN 또는 CHAT_ID 환경 변수가 설정되지 않았습니다. 알림이 작동하지 않습니다.")
 
-if not SELF_PING_HOST:
-    logging.warning("RENDER_EXTERNAL_HOSTNAME 환경 변수가 설정되지 않았습니다. 슬립 방지 기능이 작동하지 않을 수 있습니다.")
-    SELF_PING_URL = None
-else:
-    SELF_PING_URL = f"https://{SELF_PING_HOST}/"
-    logging.info(f"Self-Ping URL 설정 완료: {SELF_PING_URL}")
+# 이전 SELF_PING 관련 설정 제거됨
 
 # =========================================================
 # --- [3] CNN 데이터 가져오기 (클래스 유지) ---
@@ -99,7 +92,8 @@ class CnnFearGreedIndexFetcher:
                         if resp.status == 404:
                             logging.warning(f"HTTP 404 Not Found for {date_str}")
                             continue
-                        resp.raise_for_status()
+                        # 4xx, 5xx 에러 발생 시 예외 처리
+                        resp.raise_for_status() 
                         data: Dict[str, Any] = await resp.json()
 
                         fg_data = data.get("fear_and_greed", {})
@@ -117,6 +111,7 @@ class CnnFearGreedIndexFetcher:
                         cnn_fetch_success = True
                         break
                 except Exception as e:
+                    # IP 차단, 연결 오류 등을 여기서 포착하여 로그에 기록
                     logging.error(f"Error fetching CNN data for {date_str}: {e}")
                     continue
 
@@ -228,32 +223,10 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
             logging.error(f"정상 시작 메시지 발송 실패: {e}")
 
 # =========================================================
-# --- [5] 서버 슬립 방지 루프 (추가된 부분) ---
+# --- [5] 서버 슬립 방지 루프 (제거됨) ---
 # =========================================================
-async def self_ping_loop():
-    if not SELF_PING_URL:
-        logging.warning("Self-Ping URL이 설정되지 않아 슬립 방지 루프를 시작하지 않습니다.")
-        return
-
-    logging.info("--- 서버 유휴 상태 방지 (Self-Ping) 루프 시작 ---")
-    while True:
-        await asyncio.sleep(SELF_PING_INTERVAL_SECONDS) # 주기적으로 대기
-        try:
-            async with aiohttp.ClientSession() as session:
-                # Health Check 엔드포인트에 요청
-                async with session.get(SELF_PING_URL, timeout=5) as resp:
-                    status_code = resp.status
-                    if status_code == 200:
-                        # [수정] DEBUG 레벨을 INFO 레벨로 변경하여 로그에 명확히 기록
-                        logging.info(f"Self-Ping 성공 ({status_code}). 서버 유휴 타이머 리셋됨.")
-                    else:
-                        logging.warning(f"Self-Ping 비정상 응답 ({status_code}).")
-                    
-        except asyncio.TimeoutError:
-            logging.warning("Self-Ping 시간 초과 (Timeout Error).")
-        except Exception as e:
-            logging.error(f"Self-Ping 오류: {e}")
-
+# self_ping_loop 함수와 관련 코드를 완전히 제거했습니다.
+# 외부 모니터링 서비스(UptimeRobot 등)를 통해 슬립을 방지합니다.
 
 # =========================================================
 # --- [6] 메인 모니터링 루프 (백그라운드 작업용) ---
@@ -291,21 +264,20 @@ app = FastAPI(
 # 서버 시작 시 백그라운드 작업 시작
 @app.on_event("startup")
 async def startup_event():
-    logging.info("FastAPI Server Startup: Launching main_monitor_loop and self_ping_loop as background tasks.")
-    # 1. 모니터링 루프를 독립적인 비동기 작업으로 실행
+    # 이제 self_ping_loop 없이 main_monitor_loop만 실행됩니다.
+    logging.info("FastAPI Server Startup: Launching main_monitor_loop as a background task.")
     asyncio.create_task(main_monitor_loop())
-    # 2. 서버 슬립 방지 루프를 독립적인 비동기 작업으로 실행 (추가됨)
-    asyncio.create_task(self_ping_loop())
+    # self_ping_loop 제거됨
 
-# Health Check Endpoint (Render가 서버가 살아있는지 확인하는 용도)
+# Health Check Endpoint (외부 모니터링 서비스가 사용자의 서버 상태를 확인하는 용도)
 @app.get("/")
 async def health_check():
     return {
         "status": "running", 
-        "message": "F&G monitor and self-ping are active in the background.",
+        "message": "F&G monitor is active in the background.",
         "last_alert_date": status.get('last_alert_date'),
         "sent_values_today": status.get('sent_values_today'),
-        "ping_url_active": SELF_PING_URL is not None
+        # self_ping_url 관련 정보 제거됨
     }
 
 # =========================================================
