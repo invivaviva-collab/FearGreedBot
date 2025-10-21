@@ -46,7 +46,7 @@ TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')
 SELF_PING_HOST = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 
 FEAR_THRESHOLD = 25
-MONITOR_INTERVAL_SECONDS = 60 # 5분 간격으로 변경하여 무료 서버의 자원 소모를 줄임  * 5
+MONITOR_INTERVAL_SECONDS = 60 * 5 # 5분 간격으로 수정하여 무료 서버의 자원 소모를 줄임
 SELF_PING_INTERVAL_SECONDS = 60 * 10 # 10분 간격으로 셀프 핑
 
 # 서버 RAM에서 상태 유지 (Render 재시작 시 초기화될 수 있음에 유의)
@@ -139,7 +139,7 @@ class FearGreedAlerter:
         self.token = token
         self.chat_id = chat_id
         self.threshold = threshold
-        self.api_url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+        self.api_url = f"https://api.telegram.org/bot{self.token}/sendMessage" # API URL 정의
 
     async def _send_telegram_alert(self, current_value: int, option_5d_ratio: float, fear_rating_str: str):
         if not self.token or not self.chat_id:
@@ -159,6 +159,7 @@ class FearGreedAlerter:
         # 재시도 로직 추가 (Render 환경에서는 네트워크 이슈가 있을 수 있음)
         for attempt in range(3):
             try:
+                # 클래스에 정의된 self.api_url 사용
                 async with aiohttp.ClientSession() as session:
                     async with session.post(self.api_url, data=payload, timeout=10) as resp:
                         resp.raise_for_status()
@@ -216,11 +217,11 @@ async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: F
             f"서버 시작: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
     
-    alerter_api_url = f"https://api.telegram.org/bot{alerter.token}/sendMessage"
+    # 수정: Alerter 클래스에 정의된 api_url을 직접 사용 (중복 제거)
     payload = {'chat_id': alerter.chat_id, 'text': message_text, 'parse_mode': 'Markdown'}
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(alerter_api_url, data=payload, timeout=5) as resp:
+            async with session.post(alerter.api_url, data=payload, timeout=5) as resp:
                 resp.raise_for_status()
                 logging.info("정상 시작 메시지 발송 성공")
         except Exception as e:
