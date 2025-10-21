@@ -4,7 +4,8 @@ import json
 import logging
 import os
 import sys
-import platform # 🚨 플랫폼 정보 가져오기 위해 추가
+import platform
+import psutil # 🚨 시스템 자원(CPU, RAM) 정보 가져오기 위해 추가
 from datetime import datetime, timedelta, date
 from typing import Optional, Dict, Any, Tuple
 from zoneinfo import ZoneInfo
@@ -161,10 +162,10 @@ class CnnFearGreedIndexFetcher:
 
 
 # =========================================================
-# --- [3-1] 서버 정보 가져오기 유틸리티 (추가됨) ---
+# --- [3-1] 서버 정보 가져오기 유틸리티 (psutil 상세 정보 추가) ---
 # =========================================================
 def get_server_info(app_version: str) -> str:
-    """현재 서버 환경 정보를 문자열로 구성하여 반환합니다."""
+    """현재 서버 환경 정보를 문자열로 구성하여 반환합니다. (psutil 상세 정보 포함)"""
     
     # Python 버전 정보 (간결하게)
     python_version = sys.version.split()[0]
@@ -173,14 +174,78 @@ def get_server_info(app_version: str) -> str:
     os_info = platform.platform(terse=True)
     
     # 호스트 이름
-    host_name = SELF_PING_HOST if SELF_PING_HOST else "로컬 환경 또는 미설정"
+    host_name = os.environ.get('RENDER_EXTERNAL_HOSTNAME') if os.environ.get('RENDER_EXTERNAL_HOSTNAME') else "로컬 환경 또는 미설정"
+    
+    hardware_info = ""
+
+    try:
+        # --- 1. CPU 정보 ---
+        cpu_physical_cores = psutil.cpu_count(logical=False)
+        cpu_logical_cores = psutil.cpu_count(logical=True)
+        # 논블로킹으로 즉시 사용률 반환 (주의: 이 값은 마지막 호출 이후의 부하가 아님)
+        current_cpu_load = psutil.cpu_percent(interval=None) 
+
+        # --- 2. 메모리 정보 (RAM) ---
+        vm = psutil.virtual_memory()
+        total_ram_gb = vm.total / (1024 ** 3)
+        used_ram_percent = vm.percent
+
+        # --- 3. 스왑 메모리 정보 ---
+        sm = psutil.swap_memory()
+        total_swap_mb = sm.total / (1024 ** 2) if sm.total > 0 else 0
+        used_swap_percent = sm.percent
+
+        # --- 4. 디스크 정보 (루트 디렉토리 '/') ---
+        disk_usage = psutil.disk_usage('/')
+        total_disk_gb = disk_usage.total / (1024 ** 3)
+        used_disk_gb = disk_usage.used / (1024 ** 3)
+        used_disk_percent = disk_usage.percent
+
+        # --- 5. 네트워크 정보 (전체 I/O, 부팅 이후 누적) ---
+        net_io = psutil.net_io_counters()
+        bytes_sent_mb = net_io.bytes_sent / (1024 ** 2)
+        bytes_recv_mb = net_io.bytes_recv / (1024 ** 2)
+        
+        # --- 6. 시스템 부팅 시간 ---
+        boot_time_timestamp = psutil.boot_time()
+        boot_time_str = datetime.fromtimestamp(boot_time_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+
+        # --- 7. 로그인 사용자 (Render 환경에서는 주로 비어있음) ---
+        users = psutil.users()
+        user_list = ', '.join([u.name for u in users]) if users else "없음"
+        
+        hardware_info = (
+            f"\n\n--- 📊 시스템 자원 상세 ---\n\n"
+            # CPU
+            f"➡️ CPU Cores (P/L): `{cpu_physical_cores}/{cpu_logical_cores}`\n"
+            f"➡️ Current CPU Load: `{current_cpu_load:.1f}%`\n\n"
+            # RAM
+            f"➡️ Total RAM: `{total_ram_gb:.2f} GB`\n"
+            f"➡️ RAM Used: `{used_ram_percent:.1f}%`\n\n"
+            # Swap
+            f"➡️ Total Swap: `{total_swap_mb:.1f} MB`\n"
+            f"➡️ Swap Used: `{used_swap_percent:.1f}%`\n\n"
+            # Disk
+            f"➡️ Total Disk: `{total_disk_gb:.2f} GB`\n"
+            f"➡️ Disk Used: `{used_disk_gb:.2f} GB` (`{used_disk_percent:.1f}%`)\n\n"
+            # Network
+            f"➡️ Net Sent/Recv: `{bytes_sent_mb:.2f} MB / {bytes_recv_mb:.2f} MB`\n"
+            # Boot & User
+            f"➡️ Boot Time: `{boot_time_str}`\n"
+            f"➡️ Logged Users: `{user_list}`"
+        )
+        
+    except Exception as e:
+        # psutil 설치 안되었을 경우 예외 처리
+        hardware_info = f"\n--- ⚠️ 시스템 자원 오류 ---\n➡️ Hardware Info: `psutil` 정보 획득 실패. (Error: {e})"
+
 
     info_text = (
         f"\n\n--- ⚙️ 서버 및 환경 정보 ---\n"
         f"➡️ App Version: `{app_version}`\n"
         f"➡️ Python Version: `{python_version}`\n"
         f"➡️ OS Platform: `{os_info}`\n"
-        f"➡️ External Host: `{host_name}`"
+        f"{hardware_info}" # 상세 정보 추가
     )
     return info_text
 
@@ -209,7 +274,7 @@ async def _send_telegram_message(token: str, chat_id: str, message_text: str, lo
                         logging.warning(f"🟡 [정기 보고] 텔레그램 발송 성공 완료")
                     # 🟢 [조건부 알림 성공] INFO 레벨 유지
                     elif log_description == "조건부 알림":
-                        logging.info(f"[{log_description}] 텔레그램 발송 성공.")
+                        logging.info(f[{log_description}] 텔레그램 발송 성공.")
                     # 🔵 [시작 메시지 등 기타] INFO 레벨 유지
                     else: 
                         logging.info(f"[{log_description}] 텔레그램 발송 성공.")
@@ -324,7 +389,7 @@ class PeriodicReporter:
 # =========================================================
 # --- [4-1] 시작 시 상태 메시지 발송 (각 채널에 맞춰 분리) ---
 # =========================================================
-async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic_reporter: PeriodicReporter, server_info_text: str): # 🚨 서버 정보 텍스트 인자 추가
+async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic_reporter: PeriodicReporter, server_info_text: str):
     
     cnn_fetcher = CnnFearGreedIndexFetcher()
     success = await cnn_fetcher.fetch_data()
@@ -344,7 +409,7 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
                         f"5-day average put/call ratio: {pc_value:.4f}\n"
                         f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
                         f"서버 시작: {kst_time} KST"
-                        f"{server_info_text}" # 🚨 서버 정보 텍스트 추가
+                        f"{server_info_text}" # 서버 정보 텍스트 추가
                     )
         await _send_telegram_message(conditional_alerter.token, conditional_alerter.chat_id, message_ch1, "시작 메시지_CH1")
 
@@ -356,7 +421,7 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
                         f"현재 F&G 지수: {fg_score:.2f} ({fg_rating})\n"
                         f"P/C Ratio (5일): {pc_value:.4f}\n"
                         f"서버 시작: {kst_time} KST"
-                        f"{server_info_text}" # 🚨 서버 정보 텍스트 추가
+                        f"{server_info_text}" # 서버 정보 텍스트 추가
                         )
         # 시작 메시지는 INFO 레벨로 출력
         await _send_telegram_message(periodic_reporter.token, periodic_reporter.chat_id, message_ch2, "시작 메시지_CH2")
@@ -441,7 +506,7 @@ async def periodic_report_loop(reporter: PeriodicReporter):
 app = FastAPI(
     title="Fear & Greed Monitor (Dual Channel)",
     description="CNN Fear & Greed Index monitor with dual Telegram channels.",
-    version="1.1.2"
+    version="1.1.4" # 🚨 버전 업데이트
 )
 
 # 서버 시작 시 백그라운드 작업 시작
