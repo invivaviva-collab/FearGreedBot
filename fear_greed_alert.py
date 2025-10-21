@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sys
+import platform # 🚨 플랫폼 정보 가져오기 위해 추가
 from datetime import datetime, timedelta, date
 from typing import Optional, Dict, Any, Tuple
 from zoneinfo import ZoneInfo
@@ -160,6 +161,31 @@ class CnnFearGreedIndexFetcher:
 
 
 # =========================================================
+# --- [3-1] 서버 정보 가져오기 유틸리티 (추가됨) ---
+# =========================================================
+def get_server_info(app_version: str) -> str:
+    """현재 서버 환경 정보를 문자열로 구성하여 반환합니다."""
+    
+    # Python 버전 정보 (간결하게)
+    python_version = sys.version.split()[0]
+    
+    # 운영체제/플랫폼 정보 (terse=True로 간결하게 표시)
+    os_info = platform.platform(terse=True)
+    
+    # 호스트 이름
+    host_name = SELF_PING_HOST if SELF_PING_HOST else "로컬 환경 또는 미설정"
+
+    info_text = (
+        f"\n\n--- ⚙️ 서버 및 환경 정보 ---\n"
+        f"➡️ App Version: `{app_version}`\n"
+        f"➡️ Python Version: `{python_version}`\n"
+        f"➡️ OS Platform: `{os_info}`\n"
+        f"➡️ External Host: `{host_name}`"
+    )
+    return info_text
+
+
+# =========================================================
 # --- [4] Telegram 알림 관련 함수 및 클래스 ---
 # =========================================================
 
@@ -298,7 +324,7 @@ class PeriodicReporter:
 # =========================================================
 # --- [4-1] 시작 시 상태 메시지 발송 (각 채널에 맞춰 분리) ---
 # =========================================================
-async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic_reporter: PeriodicReporter):
+async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic_reporter: PeriodicReporter, server_info_text: str): # 🚨 서버 정보 텍스트 인자 추가
     
     cnn_fetcher = CnnFearGreedIndexFetcher()
     success = await cnn_fetcher.fetch_data()
@@ -318,6 +344,7 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
                         f"5-day average put/call ratio: {pc_value:.4f}\n"
                         f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
                         f"서버 시작: {kst_time} KST"
+                        f"{server_info_text}" # 🚨 서버 정보 텍스트 추가
                     )
         await _send_telegram_message(conditional_alerter.token, conditional_alerter.chat_id, message_ch1, "시작 메시지_CH1")
 
@@ -329,6 +356,7 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
                         f"현재 F&G 지수: {fg_score:.2f} ({fg_rating})\n"
                         f"P/C Ratio (5일): {pc_value:.4f}\n"
                         f"서버 시작: {kst_time} KST"
+                        f"{server_info_text}" # 🚨 서버 정보 텍스트 추가
                         )
         # 시작 메시지는 INFO 레벨로 출력
         await _send_telegram_message(periodic_reporter.token, periodic_reporter.chat_id, message_ch2, "시작 메시지_CH2")
@@ -425,8 +453,11 @@ async def startup_event():
     conditional_alerter = ConditionalAlerter(TELEGRAM_BOT_TOKEN, TELEGRAM_TARGET_CHAT_ID, FEAR_THRESHOLD)
     periodic_reporter = PeriodicReporter(TELEGRAM_BOT_TOKEN, TELEGRAM_TARGET_CHAT_ID_REPORT)
     
+    # 🚨 서버 정보 획득
+    server_info_text = get_server_info(app.version)
+    
     # 2. 시작 메시지 발송 (각 채널에 맞춰 분리)
-    await send_startup_message(conditional_alerter, periodic_reporter)
+    await send_startup_message(conditional_alerter, periodic_reporter, server_info_text) # 🚨 인자 전달
     
     # 3. 백그라운드 루프 실행
     if conditional_alerter.chat_id:
