@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, date
 from typing import Optional, Dict, Any, Tuple
 
 # FastAPI 및 uvicorn import (웹 서비스 구동을 위해 필요)
-from fastapi import FastAPI
+from fastapi import FastAPI, Request # Request 임포트 추가
 import uvicorn
 
 # =========================================================
@@ -271,6 +271,7 @@ async def startup_event():
 
 # Health Check Endpoint (외부 모니터링 서비스가 사용자의 서버 상태를 확인하는 용도)
 @app.get("/")
+@app.head("/") # HEAD 요청 추가
 async def health_check():
     return {
         "status": "running", 
