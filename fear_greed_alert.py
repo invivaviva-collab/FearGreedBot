@@ -52,7 +52,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 FEAR_THRESHOLD = 25
 # [채널 1] 조건부 알림 주기: 5분
-MONITOR_INTERVAL_SECONDS = 300 
+MONITOR_INTERVAL_SECONDS = 60 * 5
 # [채널 2] 정기 보고 주기: 10분
 REPORT_INTERVAL_SECONDS = 60 * 10 
 
@@ -381,7 +381,7 @@ async def periodic_report_loop(reporter: PeriodicReporter):
     cnn_fetcher = CnnFearGreedIndexFetcher()
     
     # 정기 보고는 10분 주기에 맞춰 시작 (예: 10분, 20분...)
-    await asyncio.sleep(REPORT_INTERVAL_SECONDS / 2) 
+    await asyncio.sleep(REPORT_INTERVAL_SECONDS / 5) 
 
     while True:
         # [정기보고] 데이터 체크는 INFO 레벨 유지
@@ -462,3 +462,4 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
