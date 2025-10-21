@@ -6,6 +6,7 @@ import os
 import sys
 from datetime import datetime, timedelta, date
 from typing import Optional, Dict, Any, Tuple
+from zoneinfo import ZoneInfo # <--- 추가: zoneinfo 모듈 사용
 
 # FastAPI 및 uvicorn import (웹 서비스 구동을 위해 필요)
 from fastapi import FastAPI, Request
@@ -46,6 +47,9 @@ TELEGRAM_TARGET_CHAT_ID_REPORT = os.environ.get('TELEGRAM_TARGET_CHAT_ID_REPORT'
 # Render에서 제공하는 외부 호스트 이름 (슬립 방지용)
 SELF_PING_HOST = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 
+# 🇰🇷 한국 표준시 (KST) 정의
+KST = ZoneInfo("Asia/Seoul")
+
 FEAR_THRESHOLD = 25
 # [채널 1] 조건부 알림 주기: 5분
 MONITOR_INTERVAL_SECONDS = 300 
@@ -83,7 +87,6 @@ else:
 # --- [3] CNN 데이터 가져오기 ---
 # =========================================================
 class CnnFearGreedIndexFetcher:
-    # ... (fetcher 로직은 변경 없음)
     def __init__(self):
         self.fg_score: Optional[float] = None
         self.fg_rating_kr: Optional[str] = None
@@ -99,7 +102,7 @@ class CnnFearGreedIndexFetcher:
     async def fetch_data(self) -> bool:
         self._set_error_values()
         cnn_fetch_success = False
-        today = datetime.utcnow().date()
+        today = datetime.now(KST).date() # KST 기준으로 날짜 확인
         dates_to_try = [today.strftime("%Y-%m-%d"), (today - timedelta(days=1)).strftime("%Y-%m-%d")]
 
         # Timeout을 짧게 조정
@@ -158,9 +161,6 @@ async def _send_telegram_message(token: str, chat_id: str, message_text: str, lo
 
     api_url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {'chat_id': chat_id, 'text': message_text, 'parse_mode': 'Markdown'}
-
-    # 로그 구분선 정의
-    SEPARATOR = "========================================================================"
     
     for attempt in range(3):
         try:
@@ -170,9 +170,7 @@ async def _send_telegram_message(token: str, chat_id: str, message_text: str, lo
                     
                     # 🔴 [정기 보고 성공] ERROR 레벨 (빨간색)
                     if log_description == "정기 보고":
-                        logging.error(f"🔴 {SEPARATOR}")
                         logging.error(f"🔴 [정기 보고] 텔레그램 발송 성공 완료")
-                        logging.error(f"🔴 {SEPARATOR}")
                     # 🟢 [조건부 알림 성공] INFO 레벨 (녹색/파란색)
                     elif log_description == "조건부 알림":
                         logging.info(f"[{log_description}] 텔레그램 발송 성공.")
@@ -184,9 +182,7 @@ async def _send_telegram_message(token: str, chat_id: str, message_text: str, lo
         except Exception as e:
             # 🔴 [모든 채널 최종 실패] ERROR 레벨 (빨간색)
             if attempt == 2:
-                logging.error(f"🔴 {SEPARATOR}")
-                logging.error(f"🔴 [{log_description}] 텔레그램 발송 최종 실패: {e}")
-                logging.error(f"🔴 {SEPARATOR}")
+                logging.error(f"🔴 [FINAL FAIL] [{log_description}] 텔레그램 발송 최종 실패: {e}")
                 return
             
             # 일반 실패 경고는 WARNING 레벨 유지 (주황/노란색)
@@ -205,13 +201,17 @@ class ConditionalAlerter:
 
     async def _send_alert_message(self, current_value: int, option_5d_ratio: float, fear_rating_str: str):
         pc_ratio_str = f"{option_5d_ratio:.4f}"
+        
+        # 🇰🇷 KST 시간 적용 (zoneinfo 사용)
+        kst_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
+        
         message_text = (
             f"🚨 극단적 공포 알림 (5분 조건부) 🚨\n\n"
             f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
             f"현재 지수: **{current_value}**\n\n"
             f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
             f"5-day average put/call ratio: **{pc_ratio_str}**\n\n"
-            f"발송 일시: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            f"발송 일시: {kst_time} KST" # <--- KST 표시
         )
         await _send_telegram_message(self.token, self.chat_id, message_text, "조건부 알림")
 
@@ -225,7 +225,8 @@ class ConditionalAlerter:
             logging.warning(f"Invalid F&G value: {current_index_value}")
             return
 
-        today_str = date.today().strftime("%Y-%m-%d")
+        # 🇰🇷 KST 기준으로 오늘 날짜 확인
+        today_str = datetime.now(KST).strftime("%Y-%m-%d")
         if status['last_alert_date'] != today_str:
             status['last_alert_date'] = today_str
             status['sent_values_today'] = []
@@ -253,6 +254,9 @@ class PeriodicReporter:
     async def _send_report_message(self, fg_score: float, fg_rating: str, pc_value: float, pc_rating: str):
         pc_ratio_str = f"{pc_value:.4f}"
         
+        # 🇰🇷 KST 시간 적용 (zoneinfo 사용)
+        kst_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
+        
         # 이전 응답에서 추가된, 점수에 따른 제목/내용 강조 로직을 유지합니다.
         if fg_score <= FEAR_THRESHOLD:
             # 25 이하일 때 (극단적 공포)
@@ -272,7 +276,7 @@ class PeriodicReporter:
             f"➡️ PUT AND CALL OPTIONS:\n"
             f"   - Rating: `{pc_rating}`\n"
             f"   - P/C Ratio (5-day avg): **{pc_ratio_str}**\n\n"
-            f"발송 일시: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            f"발송 일시: {kst_time} KST" # <--- KST 표시
         )
         await _send_telegram_message(self.token, self.chat_id, message_text, "정기 보고")
 
@@ -294,9 +298,12 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
     else:
         fg_score, fg_rating, pc_value, pc_rating = ERROR_SCORE_VALUE, ERROR_RATING_STR, ERROR_VALUE, ERROR_RATING_STR
 
+    # 🇰🇷 KST 시간 적용 (zoneinfo 사용)
+    kst_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
+    
     common_info = (f"현재 F&G 지수: {fg_score:.2f} ({fg_rating})\n"
                    f"P/C Ratio (5일): {pc_value:.4f}\n"
-                   f"서버 시작: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+                   f"서버 시작: {kst_time} KST") # <--- KST 표시
 
     # [채널 1] 조건부 알림 채널에 전용 시작 메시지 발송
     if conditional_alerter.chat_id:
@@ -304,13 +311,13 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
                         f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
                         f"5-day average put/call ratio: {pc_value:.4f}\n"
                         f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
-                        f"서버 시작: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+                        f"서버 시작: {kst_time} KST" # <--- KST 표시
                     )
         await _send_telegram_message(conditional_alerter.token, conditional_alerter.chat_id, message_ch1, "시작 메시지_CH1")
 
     # [채널 2] 정기 보고 채널에 전용 시작 메시지 발송
     if periodic_reporter.chat_id:
-        message_ch2 = (f"📈 정기 보고 모니터링 시작 (채널 2) 📈\n\n"
+        message_ch2 = (f"📈 정기 보고 모니터링 시작 📈\n\n"
                        f"✅ 주기: {REPORT_INTERVAL_SECONDS}초\n"
                        f"✅ 발송 조건: 무조건 발송\n"
                        f"{common_info}"
@@ -397,7 +404,7 @@ async def periodic_report_loop(reporter: PeriodicReporter):
 app = FastAPI(
     title="Fear & Greed Monitor (Dual Channel)",
     description="CNN Fear & Greed Index monitor with dual Telegram channels.",
-    version="1.1.1"
+    version="1.1.2"
 )
 
 # 서버 시작 시 백그라운드 작업 시작
