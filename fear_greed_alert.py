@@ -38,10 +38,10 @@ STOCK_KR_MAP: Dict[str, str] = {
     "n/a": "데이터 없음"
 }
 
-# ⚠️ [수정] 환경 변수에서 2개의 텔레그램 채팅방 ID 로드
+# ⚠️ 환경 변수에서 2개의 텔레그램 채팅방 ID 로드
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
-TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')  # [채널 1] 조건부 알림
-TELEGRAM_TARGET_CHAT_ID_REPORT = os.environ.get('TELEGRAM_TARGET_CHAT_ID_REPORT') # [채널 2] 정기 보고
+TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')  # [채널 1] 조건부 알림 (5분)
+TELEGRAM_TARGET_CHAT_ID_REPORT = os.environ.get('TELEGRAM_TARGET_CHAT_ID_REPORT') # [채널 2] 정기 보고 (10분)
 
 # Render에서 제공하는 외부 호스트 이름 (슬립 방지용)
 SELF_PING_HOST = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
@@ -80,10 +80,10 @@ else:
     SELF_PING_INTERVAL_SECONDS = 60 * 5 # 5분 간격으로 셀프 핑
 
 # =========================================================
-# --- [3] CNN 데이터 가져오기 (클래스 유지) ---
-# ... (내용 변경 없음)
+# --- [3] CNN 데이터 가져오기 ---
 # =========================================================
 class CnnFearGreedIndexFetcher:
+    # ... (fetcher 로직은 변경 없음)
     def __init__(self):
         self.fg_score: Optional[float] = None
         self.fg_rating_kr: Optional[str] = None
@@ -147,11 +147,10 @@ class CnnFearGreedIndexFetcher:
 
 
 # =========================================================
-# --- [4] Telegram 알림 (클래스 재구성) ---
-# FearGreedAlerter는 조건부 알림만 담당하도록 분리
+# --- [4] Telegram 알림 관련 함수 및 클래스 ---
 # =========================================================
 
-# [새 함수] 범용 메시지 발송 함수 (재시도 로직 포함)
+# 범용 메시지 발송 함수 (재시도 로직 포함)
 async def _send_telegram_message(token: str, chat_id: str, message_text: str, log_description: str):
     if not token or not chat_id:
         logging.error(f"Telegram credentials missing for {log_description}. Skipping send.")
@@ -173,7 +172,7 @@ async def _send_telegram_message(token: str, chat_id: str, message_text: str, lo
     logging.error(f"[{log_description}] 텔레그램 발송 최종 실패.")
 
 
-# [클래스 1: 조건부 알림] (기존 로직 유지)
+# [클래스 1: 조건부 알림] (채널 1: 5분 주기, F&G <= 25일 때, 동일 값 중복 방지)
 class ConditionalAlerter:
     def __init__(self, token: str, chat_id: str, threshold: int):
         self.token = token
@@ -183,7 +182,7 @@ class ConditionalAlerter:
     async def _send_alert_message(self, current_value: int, option_5d_ratio: float, fear_rating_str: str):
         pc_ratio_str = f"{option_5d_ratio:.4f}"
         message_text = (
-            f"🚨 공포 탐욕 지수 알림 🚨\n\n"
+            f"🚨 극단적 공포 알림 (5분 조건부) 🚨\n\n"
             f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
             f"현재 지수: **{current_value}**\n\n"
             f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
@@ -219,7 +218,7 @@ class ConditionalAlerter:
             logging.info(f"[조건부] No alert. Score {current_value_int} above threshold ({self.threshold}).")
 
 
-# [클래스 2: 정기 보고] (새로운 10분 주기 발송을 위한 클래스)
+# [클래스 2: 정기 보고] (채널 2: 10분 주기, 조건 없이 무조건 발송)
 class PeriodicReporter:
     def __init__(self, token: str, chat_id: str):
         self.token = token
@@ -227,8 +226,10 @@ class PeriodicReporter:
         
     async def _send_report_message(self, fg_score: float, fg_rating: str, pc_value: float, pc_rating: str):
         pc_ratio_str = f"{pc_value:.4f}"
+        
+        # ⚠️ [수정] 정기 보고 메시지 제목을 명확히 변경
         message_text = (
-            f"📊 10분 정기 지수 보고 📊\n\n"
+            f"📊 10분 주기 지수 보고 📊\n\n" 
             f"➡️ FEAR & GREED INDEX: **{fg_score:.2f}**\n"
             f"   - Rating: `{fg_rating}`\n\n"
             f"➡️ PUT AND CALL OPTIONS:\n"
@@ -244,12 +245,10 @@ class PeriodicReporter:
 
 
 # =========================================================
-# --- [4-1] 시작 시 상태 메시지 발송 ---
+# --- [4-1] 시작 시 상태 메시지 발송 (각 채널에 맞춰 분리) ---
 # =========================================================
-async def send_startup_message(alerters: list):
-    # [수정] 여러 알리미에게 시작 메시지를 보낼 수 있도록 변경
+async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic_reporter: PeriodicReporter):
     
-    # 공통 데이터 fetcher 생성 (시작 메시지에 사용)
     cnn_fetcher = CnnFearGreedIndexFetcher()
     success = await cnn_fetcher.fetch_data()
 
@@ -258,21 +257,31 @@ async def send_startup_message(alerters: list):
     else:
         fg_score, fg_rating, pc_value, pc_rating = ERROR_SCORE_VALUE, ERROR_RATING_STR, ERROR_VALUE, ERROR_RATING_STR
 
-    message_text = (f"🚀 공포/탐욕 모니터링 시작 (2채널) 🚀\n\n"
-            f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
-            f"5-day average put/call ratio: {pc_value:.4f}\n"
-            f"[채널 1] 조건부 알림 주기: {MONITOR_INTERVAL_SECONDS}초\n"
-            f"[채널 2] 정기 보고 주기: {REPORT_INTERVAL_SECONDS}초\n\n"
-            f"서버 시작: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-        )
-    
-    for alerter in alerters:
-        if alerter.chat_id:
-            await _send_telegram_message(alerter.token, alerter.chat_id, message_text, "시작 메시지")
+    common_info = (f"현재 F&G 지수: {fg_score:.2f} ({fg_rating})\n"
+                   f"P/C Ratio (5일): {pc_value:.4f}\n"
+                   f"서버 시작: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+
+    # [채널 1] 조건부 알림 채널에 전용 시작 메시지 발송
+    if conditional_alerter.chat_id:
+        message_ch1 = (f"🚀 조건부 알림 모니터링 시작 (채널 1) 🚀\n\n"
+                       f"✅ 주기: {MONITOR_INTERVAL_SECONDS}초\n"
+                       f"✅ 발송 조건: F&G 지수 $\le {FEAR_THRESHOLD}$ 일 때만 (동일 값 하루 중복 방지)\n"
+                       f"{common_info}"
+                       )
+        await _send_telegram_message(conditional_alerter.token, conditional_alerter.chat_id, message_ch1, "시작 메시지_CH1")
+
+    # [채널 2] 정기 보고 채널에 전용 시작 메시지 발송
+    if periodic_reporter.chat_id:
+        message_ch2 = (f"📈 정기 보고 모니터링 시작 (채널 2) 📈\n\n"
+                       f"✅ 주기: {REPORT_INTERVAL_SECONDS}초\n"
+                       f"✅ 발송 조건: 무조건 발송\n"
+                       f"{common_info}"
+                       )
+        await _send_telegram_message(periodic_reporter.token, periodic_reporter.chat_id, message_ch2, "시작 메시지_CH2")
 
 
 # =========================================================
-# --- [5] 서버 슬립 방지 루프 (추가된 부분) ---
+# --- [5] 서버 슬립 방지 루프 ---
 # =========================================================
 async def self_ping_loop():
     if not SELF_PING_URL:
@@ -305,8 +314,6 @@ async def main_monitor_loop(alerter: ConditionalAlerter):
     logging.info(f"--- F&G 조건부 알림 (백그라운드) 시작. 주기: {MONITOR_INTERVAL_SECONDS}s ---")
     cnn_fetcher = CnnFearGreedIndexFetcher()
     
-    # 초기 발송은 send_startup_message에서 처리
-
     while True:
         logging.info(f"[조건부] 데이터 체크 시작 ({MONITOR_INTERVAL_SECONDS}s 주기)")
         try:
@@ -326,9 +333,7 @@ async def periodic_report_loop(reporter: PeriodicReporter):
     logging.info(f"--- F&G 정기 보고 (백그라운드) 시작. 주기: {REPORT_INTERVAL_SECONDS}s ---")
     cnn_fetcher = CnnFearGreedIndexFetcher()
     
-    # 초기 발송은 send_startup_message에서 처리
-    
-    # 시작 시점의 불일치를 방지하기 위해 10분 주기의 절반을 먼저 대기 (선택 사항)
+    # 정기 보고는 10분 주기에 맞춰 시작 (예: 10분, 20분...)
     await asyncio.sleep(REPORT_INTERVAL_SECONDS / 2) 
 
     while True:
@@ -351,7 +356,7 @@ async def periodic_report_loop(reporter: PeriodicReporter):
 app = FastAPI(
     title="Fear & Greed Monitor (Dual Channel)",
     description="CNN Fear & Greed Index monitor with dual Telegram channels.",
-    version="1.1.0"
+    version="1.1.1"
 )
 
 # 서버 시작 시 백그라운드 작업 시작
@@ -363,15 +368,17 @@ async def startup_event():
     conditional_alerter = ConditionalAlerter(TELEGRAM_BOT_TOKEN, TELEGRAM_TARGET_CHAT_ID, FEAR_THRESHOLD)
     periodic_reporter = PeriodicReporter(TELEGRAM_BOT_TOKEN, TELEGRAM_TARGET_CHAT_ID_REPORT)
     
-    # 2. 시작 메시지 발송 (모두에게)
-    await send_startup_message([conditional_alerter, periodic_reporter])
+    # 2. 시작 메시지 발송 (각 채널에 맞춰 분리)
+    await send_startup_message(conditional_alerter, periodic_reporter)
     
     # 3. 백그라운드 루프 실행
-    # 채널 1: 조건부 알림 루프 (5분)
-    asyncio.create_task(main_monitor_loop(conditional_alerter))
+    if conditional_alerter.chat_id:
+        # 채널 1: 조건부 알림 루프 (5분)
+        asyncio.create_task(main_monitor_loop(conditional_alerter))
     
-    # 채널 2: 정기 보고 루프 (10분)
-    asyncio.create_task(periodic_report_loop(periodic_reporter))
+    if periodic_reporter.chat_id:
+        # 채널 2: 정기 보고 루프 (10분)
+        asyncio.create_task(periodic_report_loop(periodic_reporter))
 
     # 서버 슬립 방지 루프 실행
     asyncio.create_task(self_ping_loop())
@@ -388,10 +395,12 @@ async def health_check():
             "target_chat_id_set": TELEGRAM_TARGET_CHAT_ID is not None,
             "last_alert_date": status.get('last_alert_date'),
             "sent_values_today": status.get('sent_values_today'),
+            "description": "5분 주기, F&G <= 25 조건부 발송 (동일 값 중복 방지)"
         },
         "channel_2_status": {
             "target_chat_id_set": TELEGRAM_TARGET_CHAT_ID_REPORT is not None,
             "report_interval_seconds": REPORT_INTERVAL_SECONDS,
+            "description": "10분 주기, 조건 없이 무조건 발송"
         },
         "ping_url_active": SELF_PING_URL is not None
     }
