@@ -7,22 +7,21 @@ import sys
 from datetime import datetime, timedelta, date
 from typing import Optional, Dict, Any, Tuple
 
-from fastapi import FastAPI, HTTPException # HTTPException 추가
+from fastapi import FastAPI, HTTPException 
 import uvicorn
 
 # =========================================================
-# --- [1] 로깅 설정 (콘솔 전용) ---
+# --- [1] 로깅 설정 (콘솔 전용 및 레벨 조정) ---
 # =========================================================
 logging.basicConfig(
-    # INFO 레벨로 설정하여 디폴트로는 DEBUG 로그는 출력되지 않도록 유지
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(funcName)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     stream=sys.stdout 
 )
-# 반복적인 정보는 DEBUG 레벨로 호출하도록 조정
+# 반복되는 정보는 DEBUG 레벨로 호출하도록 logger 설정 (개선 사항 ④)
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG) # DEBUG 레벨 호출은 가능하도록 설정 (배포 시 INFO로 변경 가능)
+logger.setLevel(logging.DEBUG) 
 
 # =========================================================
 # --- [2] 전역 설정 및 환경 변수 로드 ---
@@ -38,7 +37,7 @@ STOCK_KR_MAP: Dict[str, str] = {
     "n/a": "데이터 없음"
 }
 
-# ⚠️ 환경 변수에서 로드 (보안 및 Render 환경에 필수)
+# ⚠️ 환경 변수에서 로드 
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')
 SELF_PING_HOST = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
@@ -67,7 +66,6 @@ if not SELF_PING_HOST:
     logger.warning("RENDER_EXTERNAL_HOSTNAME 환경 변수가 설정되지 않았습니다. 슬립 방지 기능이 작동하지 않을 수 있습니다.")
     SELF_PING_URL = None
 else:
-    # Health Check 엔드포인트가 '/'이므로, URL을 "/"로 설정
     SELF_PING_URL = f"https://{SELF_PING_HOST}/"
     logger.info(f"Self-Ping URL 설정 완료: {SELF_PING_URL}")
 
@@ -100,10 +98,10 @@ class CnnFearGreedIndexFetcher:
         today = datetime.utcnow().date()
         dates_to_try = [today.strftime("%Y-%m-%d"), (today - timedelta(days=1)).strftime("%Y-%m-%d")]
 
+        # 전역 세션(HTTP_SESSION) 사용 (개선 사항 ①)
         for date_str in dates_to_try:
             url = CNN_BASE_URL + date_str
             try:
-                # 전역 세션 사용 (개선 사항 ①)
                 # 응답 시간 초과를 5초로 설정
                 async with HTTP_SESSION.get(url, timeout=5) as resp: 
                     if resp.status == 404:
@@ -135,7 +133,6 @@ class CnnFearGreedIndexFetcher:
                     except Exception as data_error:
                         # KeyError, ValueError, TypeError 등을 모두 포착
                         logger.error(f"❌ Data structure error during extraction for {date_str}: {data_error}")
-                        # 이 경우, 현재 에러 값은 유지한 채 다음 날짜 시도로 넘어감
                         continue
 
             except Exception as e:
@@ -164,7 +161,7 @@ class FearGreedAlerter:
         self.api_url = f"https://api.telegram.org/bot{self.token}/sendMessage"
 
     async def _send_telegram_alert(self, current_value: int, option_5d_ratio: float, fear_rating_str: str):
-        if not self.token or not self.chat_id or not HTTP_SESSION:
+        if not self.token or not self.chat_id or not HTTP_SESSION: # HTTP_SESSION 유효성 추가 체크
             logger.error("Telegram credentials or HTTP_SESSION missing. Skipping alert send.")
             return
             
@@ -220,34 +217,40 @@ class FearGreedAlerter:
 
 
 # =========================================================
-# --- [4-1] 시작 시 상태 메시지 발송 (데이터 페치 로직 제거) ---
+# --- [4-1] 시작 시 상태 메시지 발송 (개선 사항 ③ 제외: 데이터 페치 유지) ---
 # =========================================================
-async def send_startup_message(alerter: FearGreedAlerter):
+async def send_startup_message(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: FearGreedAlerter):
     """
-    개선 사항 ③: 부팅 속도 향상을 위해 데이터 페치 없이 정적 메시지만 보냅니다.
+    ⚠️ Render 부팅 지연의 원인이 됩니다. 부팅 후 Health Check 실패 가능성이 높습니다.
+    (요청에 따라 데이터 페치 로직을 유지합니다.)
     """
-    if not alerter.token or not alerter.chat_id or not HTTP_SESSION:
+    if not alerter.token or not alerter.chat_id or not HTTP_SESSION: # HTTP_SESSION 유효성 추가 체크
         logger.error("Telegram credentials or HTTP_SESSION missing. Skipping startup message.")
         return
 
-    message_text = (f"🚀 공포/탐욕 모니터링 시작 (최적화 버전) 🚀\n\n"
-            f"데이터 페치는 첫 모니터링 주기에서 수행됩니다.\n"
-            f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n"
-            f"Self-Ping 주기: {SELF_PING_INTERVAL_SECONDS}초\n\n"
-            f"서버 시작: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+    # 데이터 가져오기를 시작 메시지 발송 전에 실행 (부팅 지연 유발)
+    success = await cnn_fetcher.fetch_data()
+    if success:
+        fg_score, fg_rating, pc_value, pc_rating = cnn_fetcher.get_results()
+    else:
+        fg_score, fg_rating, pc_value, pc_rating = ERROR_SCORE_VALUE, ERROR_RATING_STR, ERROR_VALUE, ERROR_RATING_STR
+
+    message_text = (f"🚀 공포/탐욕 모니터링 시작 (느린 부팅 버전) 🚀\n\n"
+            f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
+            f"5-day average put/call ratio: {pc_value:.4f}\n"
+            f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
+            f"발송 일시: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
     
-    alerter_api_url = f"https://api.telegram.org/bot{alerter.token}/sendMessage"
-    payload = {'chat_id': alerter.chat_id, 'text': message_text, 'parse_mode': 'Markdown'}
 
+    payload = {'chat_id': alerter.chat_id, 'text': message_text, 'parse_mode': 'Markdown'}
     try:
         # 전역 세션 사용 (개선 사항 ①)
-        async with HTTP_SESSION.post(alerter_api_url, data=payload, timeout=5) as resp:
+        async with HTTP_SESSION.post(alerter.api_url, data=payload, timeout=5) as resp:
             resp.raise_for_status()
             logger.info("정상 시작 메시지 발송 성공")
     except Exception as e:
         logger.error(f"정상 시작 메시지 발송 실패: {e}")
-
 
 # =========================================================
 # --- [5] 서버 슬립 방지 루프 (안정성 강화) ---
@@ -256,6 +259,11 @@ async def self_ping_loop():
     if not SELF_PING_URL:
         logger.warning("Self-Ping URL이 설정되지 않아 슬립 방지 루프를 시작하지 않습니다.")
         return
+    
+    # 세션 초기화 대기 (안정성 강화)
+    while HTTP_SESSION is None:
+        logger.debug("Self-Ping: Waiting for HTTP_SESSION initialization...")
+        await asyncio.sleep(1)
 
     logger.info("--- 서버 유휴 상태 방지 (Self-Ping) 루프 시작 ---")
     failure_count = 0 # 개선 사항 ②: 연속 실패 횟수 카운터
@@ -263,14 +271,8 @@ async def self_ping_loop():
     while True:
         await asyncio.sleep(SELF_PING_INTERVAL_SECONDS) # 주기적으로 대기
         
-        if not HTTP_SESSION:
-            logger.error("Self-Ping: HTTP_SESSION is not initialized.")
-            await asyncio.sleep(5) # 잠시 대기 후 재시도
-            continue
-
         try:
             # 전역 세션 사용 (개선 사항 ①)
-            # Health Check 엔드포인트에 요청
             async with HTTP_SESSION.get(SELF_PING_URL, timeout=5) as resp: 
                 status_code = resp.status
                 if status_code == 200:
@@ -292,24 +294,6 @@ async def self_ping_loop():
             logger.critical("🚨 최대 연속 Self-Ping 실패 횟수 도달. 무한 루프 방지를 위해 루프 중단.")
             break
 
-
-# =========================================================
-# --- [6-1] 모니터링 사이클 실행 함수 (로직 분리) ---
-# =========================================================
-async def execute_monitoring_cycle(cnn_fetcher: CnnFearGreedIndexFetcher, alerter: FearGreedAlerter):
-    """모니터링 루프의 단일 실행 사이클을 처리합니다."""
-    # 개선 사항 ④: 반복되는 루프 정보는 DEBUG 레벨로
-    logger.debug(f"--- 데이터 체크 시작 ({MONITOR_INTERVAL_SECONDS}s 주기) ---")
-    try:
-        if await cnn_fetcher.fetch_data():
-            fg_score, fg_rating, pc_value, pc_rating = cnn_fetcher.get_results()
-            logger.info(f"F&G 점수: {fg_score:.2f} ({fg_rating}), P/C 값: {pc_value:.4f}")
-            await alerter.check_and_alert(fg_score, pc_value, pc_rating)
-        else:
-            logger.warning("CNN 데이터 획득 실패. 알림 프로세스 건너뜀.")
-    except Exception as e:
-        logger.error(f"모니터링 사이클 실행 중 예상치 못한 오류: {e}")
-
 # =========================================================
 # --- [6] 메인 모니터링 루프 (백그라운드 작업용) ---
 # =========================================================
@@ -317,26 +301,39 @@ async def main_monitor_loop():
     logging.info("--- F&G 모니터링 프로그램 (백그라운드) 시작 ---")
     cnn_fetcher = CnnFearGreedIndexFetcher()
     alerter = FearGreedAlerter(TELEGRAM_BOT_TOKEN, TELEGRAM_TARGET_CHAT_ID, FEAR_THRESHOLD)
+    
+    # 세션 초기화 대기 (안정성 강화)
+    while HTTP_SESSION is None:
+        logger.debug("Monitor: Waiting for HTTP_SESSION initialization...")
+        await asyncio.sleep(1)
 
-    # 1. 정적 시작 메시지 발송 (개선 사항 ③: 부팅 속도에 영향 최소화)
-    await send_startup_message(alerter)
+    # 시작 시 한 번 발송 (⚠️ 이 부분이 부팅 지연의 원인입니다.)
+    await send_startup_message(cnn_fetcher, alerter)
 
-    # 2. 첫 모니터링 주기 실행 (개선 사항 ③: 부팅 후 첫 데이터 페치)
-    await execute_monitoring_cycle(cnn_fetcher, alerter)
-
-    # 3. 주기적 루프 실행
     while True:
-        # Render Free Tier에서 너무 잦은 요청은 피하기 위해 대기 시간 사용
+        # 개선 사항 ④: 반복되는 루프 정보는 DEBUG 레벨로
+        logger.debug(f"--- 데이터 체크 시작 ({MONITOR_INTERVAL_SECONDS}s 주기) ---")
+        try:
+            # send_startup_message에서 이미 fetch_data를 한 번 호출했으므로,
+            # 여기서는 다음 주기부터 정상적으로 데이터 페치 및 알림을 수행합니다.
+            if await cnn_fetcher.fetch_data():
+                fg_score, fg_rating, pc_value, pc_rating = cnn_fetcher.get_results()
+                logger.info(f"F&G 점수: {fg_score:.2f} ({fg_rating}), P/C 값: {pc_value:.4f}")
+                await alerter.check_and_alert(fg_score, pc_value, pc_rating)
+            else:
+                 logger.warning("CNN 데이터 획득 실패. 알림 프로세스 건너뜀.")
+        except Exception as e:
+            logger.error(f"모니터링 루프 중 오류: {e}")
+        
+        # 주기적인 대기
         await asyncio.sleep(MONITOR_INTERVAL_SECONDS)
-        await execute_monitoring_cycle(cnn_fetcher, alerter)
-
 
 # =========================================================
 # --- [7] FastAPI 웹 서비스 설정 ---
 # =========================================================
 app = FastAPI(
-    title="Fear & Greed Monitor (Optimized)",
-    description="CNN Fear & Greed Index monitor running as a background task on Render Free Tier with stability optimizations.",
+    title="Fear & Greed Monitor (Unoptimized Startup)",
+    description="CNN Fear & Greed Index monitor, intentionally keeping the slow startup process.",
     version="1.0.0"
 )
 
@@ -345,7 +342,7 @@ app = FastAPI(
 async def startup_event():
     """
     개선 사항 ①: 전역 HTTP 세션 초기화
-    개선 사항 ③: 데이터 페치 없이 태스크만 생성하여 즉시 반환
+    Self-Ping 루프를 백그라운드 태스크로 추가
     """
     global HTTP_SESSION
     logger.info("FastAPI Server Startup: Initializing HTTP Session and launching background tasks.")
@@ -356,18 +353,18 @@ async def startup_event():
     # 2. 모니터링 루프를 독립적인 비동기 작업으로 실행
     asyncio.create_task(main_monitor_loop())
     
-    # 3. 서버 슬립 방지 루프를 독립적인 비동기 작업으로 실행
+    # 3. 서버 슬립 방지 루프를 독립적인 비동기 작업으로 실행 (개선 사항 ②)
     asyncio.create_task(self_ping_loop())
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """전역 HTTP 세션을 안전하게 닫습니다."""
+    """전역 HTTP 세션을 안전하게 닫습니다. (개선 사항 ①)"""
     global HTTP_SESSION
     if HTTP_SESSION and not HTTP_SESSION.closed:
         await HTTP_SESSION.close()
         logger.info("HTTP Session closed successfully.")
 
-# Health Check Endpoint (Render가 서버가 살아있는지 확인하는 용도)
+# Health Check Endpoint
 @app.get("/")
 async def health_check():
     return {
