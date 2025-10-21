@@ -46,8 +46,8 @@ TELEGRAM_TARGET_CHAT_ID = os.environ.get('TELEGRAM_TARGET_CHAT_ID')
 SELF_PING_HOST = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 
 FEAR_THRESHOLD = 25
-MONITOR_INTERVAL_SECONDS = 60 * 5 # 5분 간격으로 수정하여 무료 서버의 자원 소모를 줄임
-SELF_PING_INTERVAL_SECONDS = 60 * 10 # 10분 간격으로 셀프 핑
+MONITOR_INTERVAL_SECONDS = 60 # 5분 간격으로 수정하여 무료 서버의 자원 소모를 줄임
+SELF_PING_INTERVAL_SECONDS = 60 * 5 # 10분 간격으로 셀프 핑
 
 # 서버 RAM에서 상태 유지 (Render 재시작 시 초기화될 수 있음에 유의)
 status = {"last_alert_date": "1970-01-01", "sent_values_today": []}
@@ -244,7 +244,8 @@ async def self_ping_loop():
                 async with session.get(SELF_PING_URL, timeout=5) as resp:
                     status_code = resp.status
                     if status_code == 200:
-                        logging.debug(f"Self-Ping 성공 ({status_code}). 서버 유휴 타이머 리셋됨.")
+                        # [수정] DEBUG 레벨을 INFO 레벨로 변경하여 로그에 명확히 기록
+                        logging.info(f"Self-Ping 성공 ({status_code}). 서버 유휴 타이머 리셋됨.")
                     else:
                         logging.warning(f"Self-Ping 비정상 응답 ({status_code}).")
                     
