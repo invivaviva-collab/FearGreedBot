@@ -297,9 +297,9 @@ class ConditionalAlerter:
         kst_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
         
         message_text = (
-            f"🚨 극단적 공포({current_value}) 알림 🚨\n\n"
-            f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
-            f"현재 지수: `{current_value}`\n\n"
+            f"🚨 [극단적 공포(Extreme Fear)] 공탐 지수(`{current_value}`) 🚨\n\n"
+            # f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
+            # f"현재 지수: `{current_value}`\n\n"
             f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
             f"5-day average put/call ratio: **{pc_ratio_str}**\n\n"
             f"발송 일시: {kst_time} KST"
@@ -565,6 +565,7 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
