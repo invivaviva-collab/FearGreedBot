@@ -402,10 +402,7 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
                         "• 0시 또는 재부팅 시 발송 기록 초기화\n"
                         "• 임시 저장 위치 램으로 변경\n"
                         "• CNN 서버와 동일한 업데이트 주기 적용\n"
-                        "• 홈서버에서 클라우드 서버로 이전\n"   
-
-
-                        
+                        "• 홈서버에서 클라우드 서버로 이전\n"                           
                
                         # f"서버 시작: {kst_time} KST"
                         f"{server_info_text}" # 서버 정보 텍스트 추가
@@ -505,7 +502,7 @@ async def periodic_report_loop(reporter: PeriodicReporter):
 app = FastAPI(
     title="Fear & Greed Monitor (Dual Channel)",
     description="CNN Fear & Greed Index monitor with dual Telegram channels.",
-    version="1.1.4" # 🚨 버전 업데이트
+    version="1.0.4" # 🚨 버전 업데이트
 )
 
 # 서버 시작 시 백그라운드 작업 시작
@@ -569,6 +566,7 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
