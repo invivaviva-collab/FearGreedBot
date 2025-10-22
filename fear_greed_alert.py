@@ -297,7 +297,7 @@ class ConditionalAlerter:
         kst_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
         
         message_text = (
-            f"🚨 [극단적 공포(Extreme Fear)] 공탐 지수(`{current_value}`) 🚨\n\n"
+            f"🚨 공탐 지수(`{current_value}`) 극단적 공포 🚨\n\n"
             # f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
             # f"현재 지수: `{current_value}`\n\n"
             f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
@@ -393,21 +393,21 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
     kst_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
     
     # [채널 1] 조건부 알림 채널에 전용 시작 메시지 발송
-    if conditional_alerter.chat_id:
-        message_ch1 = (f"🚀 공포/탐욕 지수 모니터링 시작 🚀\n\n\n"                      
+    # if conditional_alerter.chat_id:
+    #     message_ch1 = (f"🚀 공포/탐욕 지수 모니터링 시작 🚀\n\n\n"                      
 
-                       "### 🔧 업데이트 내용\n\n"
-                        "• 공탐 지수 25 이하만 발송\n"
-                        "• 중복 알림 방지\n"                     
-                        "• 0시 또는 재부팅되면 발송 기록 초기화\n"
-                        "• 임시 저장 위치 램으로 변경\n"
-                        "• CNN 서버와 동일한 업데이트 주기 적용\n"
-                        "• 홈서버에서 클라우드 서버로 이전\n"                           
+    #                    "### 🔧 업데이트 내용\n\n"
+    #                     "• 공탐 지수 25 이하만 발송\n"
+    #                     "• 중복 알림 방지\n"                     
+    #                     "• 0시 또는 재부팅되면 발송 기록 초기화\n"
+    #                     "• 임시 저장 위치 램으로 변경\n"
+    #                     "• CNN 서버와 동일한 업데이트 주기 적용\n"
+    #                     "• 홈서버에서 클라우드 서버로 이전\n"                           
                
-                        # f"서버 시작: {kst_time} KST"
-                        f"{server_info_text}" # 서버 정보 텍스트 추가
-                    )
-        await _send_telegram_message(conditional_alerter.token, conditional_alerter.chat_id, message_ch1, "시작 메시지_CH1")
+    #                     # f"서버 시작: {kst_time} KST"
+    #                     f"{server_info_text}" # 서버 정보 텍스트 추가
+    #                 )
+    #     await _send_telegram_message(conditional_alerter.token, conditional_alerter.chat_id, message_ch1, "시작 메시지_CH1")
 
     # [채널 2] 정기 보고 채널에 전용 시작 메시지 발송 (기능 활성화 시에만)
     if periodic_reporter.chat_id and REPORT_ENABLED:
@@ -566,6 +566,7 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
