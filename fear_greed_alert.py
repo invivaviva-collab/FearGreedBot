@@ -231,7 +231,7 @@ def get_server_info(app_version: str) -> str:
 
 
     info_text = (
-        f"\n\n--- ⚙️ 서버 및 환경 정보 ---\n"
+        f"\n\n--- ⚙️ 서버 및 환경 정보 ---\n\n"
         f"➡️ App Version: `{app_version}`\n"
         f"➡️ Python Version: `{python_version}`\n"
         f"➡️ OS Platform: `{os_info}`\n"
@@ -394,20 +394,16 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
     
     # [채널 1] 조건부 알림 채널에 전용 시작 메시지 발송
     if conditional_alerter.chat_id:
-        message_ch1 = (f"🚀 공포/탐욕 모니터링 시작 🚀\n\n"
-                       
-                        f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
-                        f"5-day average put/call ratio: {pc_value:.4f}\n"
-                        f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n\n"
+        message_ch1 = (f"🚀 공포/탐욕 지수 모니터링 시작 🚀\n\n\n"                      
 
                        "### 🔧 업데이트 내용\n\n"
                         "• 공탐 지수 25 이하만 발송\n"
                         "• 동일 지수 알림 중복 발송 방지\n"
                         "• 설정 저장 위치를 램으로 변경\n"
                         "• 서버와 동일한 업데이트 주기 적용\n"
-                        "• 홈서버에서 클라우드 서버로 이전\n\n\n"                       
+                        "• 홈서버에서 클라우드 서버로 이전\n"                       
                
-                        f"서버 시작: {kst_time} KST"
+                        # f"서버 시작: {kst_time} KST"
                         f"{server_info_text}" # 서버 정보 텍스트 추가
                     )
         await _send_telegram_message(conditional_alerter.token, conditional_alerter.chat_id, message_ch1, "시작 메시지_CH1")
@@ -569,6 +565,7 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
