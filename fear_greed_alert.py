@@ -300,7 +300,7 @@ class ConditionalAlerter:
         kst_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
         
         message_text = (
-            f"🚨 극단적 공포 알림 (5분 조건부) 🚨\n\n"
+            f"🚨 극단적 공포 알림 🚨\n\n"
             f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
             f"현재 지수: **{current_value}**\n\n"
             f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
@@ -398,9 +398,18 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
     # [채널 1] 조건부 알림 채널에 전용 시작 메시지 발송
     if conditional_alerter.chat_id:
         message_ch1 = (f"🚀 공포/탐욕 모니터링 시작 🚀\n\n"
+                       
                         f"현재 공포/탐욕 지수: {fg_score:.2f} ({fg_rating})\n"
                         f"5-day average put/call ratio: {pc_value:.4f}\n"
-                        f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n"
+                        f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n\n"
+
+                       "### 🔧 업데이트 내용\n\n"
+                        "• 중복 발송 방지 설정값 저장 위치를 램디스크로 변경\n"
+                        "• 공탐지수 25 이하일 때만 알림 발송\n"
+                        "• CNN 백엔드 서버와 동일한 업데이트 주기 적용\n"
+                        "• 클라우드 서버 이전으로 24시간 안정적 알림 제공\n\n\n"
+                       
+                        f" - CNN 백엔드 서버의 업데이트 주기와 동일\n\n"
                         f"서버 시작: {kst_time} KST"
                         f"{server_info_text}" # 서버 정보 텍스트 추가
                     )
@@ -563,6 +572,7 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
