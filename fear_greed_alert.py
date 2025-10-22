@@ -398,10 +398,14 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
 
                        "### 🔧 업데이트 내용\n\n"
                         "• 공탐 지수 25 이하만 발송\n"
-                        "• 동일 지수 알림 중복 발송 방지\n"
-                        "• 설정 저장 위치를 램으로 변경\n"
-                        "• 서버와 동일한 업데이트 주기 적용\n"
-                        "• 홈서버에서 클라우드 서버로 이전\n"                       
+                        "• 중복 알림 방지\n"                     
+                        "• 0시 또는 재부팅 시 발송 기록 초기화\n"
+                        "• 임시 저장 위치 램으로 변경\n"
+                        "• CNN 서버와 동일한 업데이트 주기 적용\n"
+                        "• 홈서버에서 클라우드 서버로 이전\n"   
+
+
+                        
                
                         # f"서버 시작: {kst_time} KST"
                         f"{server_info_text}" # 서버 정보 텍스트 추가
@@ -565,6 +569,7 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
