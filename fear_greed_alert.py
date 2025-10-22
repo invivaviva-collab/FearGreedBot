@@ -217,13 +217,10 @@ def get_server_info(app_version: str) -> str:
         hardware_info = (
             # CPU
             f"➡️ CPU Cores (P/L): `{cpu_physical_cores}/{cpu_logical_cores}`\n"
-            f"➡️ Current CPU Load: `{current_cpu_load:.1f}%`\n"
             # RAM
             f"➡️ Total RAM: `{total_ram_gb:.2f} GB`\n"
-            f"➡️ RAM Used: `{used_ram_percent:.1f}%`\n"
             # Disk
             f"➡️ Total Disk: `{total_disk_gb:.2f} GB`\n"
-            f"➡️ Disk Used: `{used_disk_gb:.2f} GB` (`{used_disk_percent:.1f}%`)\n"
             # Boot & User
             f"➡️ Boot Time: `{boot_time_str}`\n"
         )
@@ -300,9 +297,9 @@ class ConditionalAlerter:
         kst_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
         
         message_text = (
-            f"🚨 극단적 공포 알림 🚨\n\n"
+            f"🚨 극단적 공포({current_value}) 알림 🚨\n\n"
             f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
-            f"현재 지수: **{current_value}**\n\n"
+            f"현재 지수: `{current_value}`\n\n"
             f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
             f"5-day average put/call ratio: **{pc_ratio_str}**\n\n"
             f"발송 일시: {kst_time} KST"
@@ -404,10 +401,11 @@ async def send_startup_message(conditional_alerter: ConditionalAlerter, periodic
                         f"모니터링 주기: {MONITOR_INTERVAL_SECONDS}초\n\n\n"
 
                        "### 🔧 업데이트 내용\n\n"
-                        "• 서버와 동일한 업데이트 주기 적용\n"
-                        "• 설정 저장 위치를 램으로 변경\n"
+                        "• 공탐 지수 25 이하만 발송\n"
                         "• 동일 지수 알림 중복 발송 방지\n"
-                        "• 클라우드 서버로 이전\n\n\n"                       
+                        "• 설정 저장 위치를 램으로 변경\n"
+                        "• 서버와 동일한 업데이트 주기 적용\n"
+                        "• 홈서버에서 클라우드 서버로 이전\n\n\n"                       
                
                         f"서버 시작: {kst_time} KST"
                         f"{server_info_text}" # 서버 정보 텍스트 추가
@@ -571,6 +569,7 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
