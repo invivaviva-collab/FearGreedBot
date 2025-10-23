@@ -80,9 +80,9 @@ if REPORT_ENABLED:
     if not TELEGRAM_TARGET_CHAT_ID_REPORT:
         logging.error("[채널 2] 정기 보고가 활성화되었으나 TELEGRAM_TARGET_CHAT_ID_REPORT가 없습니다. 보고 기능이 작동하지 않습니다.")
     else:
-        logging.info("🟢 [채널 2] 정기 보고 기능이 활성화되었습니다.")
+        logging.info("[채널 2] 정기 보고 기능이 활성화되었습니다.")
 else:
-    logging.warning("🔴 [채널 2] 정기 보고 기능이 비활성화되었습니다. (ENABLE_PERIODIC_REPORT=False)")
+    logging.warning("[채널 2] 정기 보고 기능이 비활성화되었습니다. (ENABLE_PERIODIC_REPORT=False)")
 
 
 # Self-Ping URL 설정
@@ -259,10 +259,10 @@ async def _send_telegram_message(token: str, chat_id: str, message_text: str, lo
                 async with session.post(api_url, data=payload, timeout=10) as resp:
                     resp.raise_for_status()
                     
-                    # 🟡 [정기 보고 성공] WARNING 레벨로 변경 (사용자 요청)
+                    # [정기 보고 성공] WARNING 레벨로 변경 (사용자 요청)
                     if log_description == "정기 보고":
-                        logging.warning(f"🟡 [정기 보고] 텔레그램 발송 성공 완료")
-                    # 🟢 [조건부 알림 성공] INFO 레벨 유지
+                        logging.warning(f"[정기 보고] 텔레그램 발송 성공 완료")
+                    # [조건부 알림 성공] INFO 레벨 유지
                     elif log_description == "조건부 알림":
                         logging.info(f"[{log_description}] 텔레그램 발송 성공.")
                     # 🔵 [시작 메시지 등 기타] INFO 레벨 유지
@@ -271,9 +271,9 @@ async def _send_telegram_message(token: str, chat_id: str, message_text: str, lo
                         
                     return
         except Exception as e:
-            # 🔴 [모든 채널 최종 실패] ERROR 레벨 (빨간색)
+            # [모든 채널 최종 실패] ERROR 레벨 (빨간색)
             if attempt == 2:
-                logging.error(f"🔴 [FINAL FAIL] [{log_description}] 텔레그램 발송 최종 실패: {e}")
+                logging.error(f"[FINAL FAIL] [{log_description}] 텔레그램 발송 최종 실패: {e}")
                 return
             
             # 일반 실패 경고는 WARNING 레벨 유지 (주황/노란색)
@@ -297,7 +297,7 @@ class ConditionalAlerter:
         kst_time = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
         
         message_text = (
-            f"🚨 공탐 지수(`{current_value}`) 극단적 공포 🚨\n\n"
+            f"🚨 공포/탐욕 지수(`{current_value}`) 극단적 공포 🚨\n\n"
             # f"공포/탐욕: `극단적 공포(Extreme Fear)`\n"
             # f"현재 지수: `{current_value}`\n\n"
             f"PUT AND CALL OPTIONS: `{fear_rating_str}`\n"
@@ -329,11 +329,11 @@ class ConditionalAlerter:
                 status['sent_values_today'].append(current_value_int)
                 await self._send_alert_message(current_value_int, option_5d_ratio, fear_rating_str)
             else:
-                # 🔴 [중복 차단] ERROR 레벨로 변경 (사용자 요청)
-                logging.error(f"🔴 [조건부 차단] Duplicate alert blocked: {current_value_int} (already sent today)")
+                # [중복 차단] ERROR 레벨로 변경 (사용자 요청)
+                logging.error(f"[조건부 차단] Duplicate alert blocked: {current_value_int} (already sent today)")
         else:
-            # 🔴 [조건 미충족] ERROR 레벨로 변경 (사용자 요청)
-            logging.error(f"🔴 [조건 미충족] Alert skip. Score {current_value_int} above threshold ({self.threshold}).")
+            # [조건 미충족] ERROR 레벨로 변경 (사용자 요청)
+            logging.error(f"[조건 미충족] Alert skip. Score {current_value_int} above threshold ({self.threshold}).")
 
 
 # [클래스 2: 정기 보고] (채널 2: 10분 주기, 조건 없이 무조건 발송)
@@ -500,8 +500,8 @@ async def periodic_report_loop(reporter: PeriodicReporter):
 # --- [8] FastAPI 웹 서비스 설정 ---
 # =========================================================
 app = FastAPI(
-    title="Fear & Greed Monitor (Dual Channel)",
-    description="CNN Fear & Greed Index monitor with dual Telegram channels.",
+    title="Fear & Greed Monitor",
+    description="CNN Fear & Greed Index monitor with Telegram channels.",
     version="1.0.4" # 🚨 버전 업데이트
 )
 
@@ -566,6 +566,7 @@ if __name__ == '__main__':
     
     logging.info(f"Starting uvicorn server on port {port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
